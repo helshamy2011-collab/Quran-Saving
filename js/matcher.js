@@ -1,7 +1,7 @@
 // محرك المطابقة: يقارن الكلمات المسموعة بنص المصحف كلمة كلمة
 // ويحدد: صحيح / خطأ / سقط (تخطّاه) / نسيه (طلب تلميح) / تردد ثم صحّح
 
-import { normalizeArabic, wordMatches, wordScore, joinedWord } from './quran.js';
+import { normalizeArabic, wordMatches, wordScore, joinedWord, rivalsOf } from './quran.js';
 
 export const STATUS = {
   HIDDEN: 'hidden',
@@ -21,8 +21,12 @@ export class Matcher {
     // بداية كل مقطع (أول كلمة، أو آية غير متصلة بما قبلها)
     this.starts = words.map((w, i) => i === 0 || (w.g !== words[i - 1].g && w.g !== words[i - 1].g + 1));
     this.status = words.map(() => STATUS.HIDDEN);
+    this.heardAt = words.map(() => ''); // ما قاله المستخدم مكان الكلمة الخطأ (لكشف الخلط بالمتشابهات)
+    // الكلمات المقابلة في الآيات المتشابهة (لو قالها المستخدم فهو خلط وليس نطقاً مختلفاً)
+    this.rivals = words.map((w) => (w.g != null ? rivalsOf(w.g)[w.w] || [] : []));
     this.pos = 0;
     this.missStreak = 0;
+    this.missHeard = [];
     this.history = [];
   }
 
@@ -31,13 +35,15 @@ export class Matcher {
   clone() {
     const m = new Matcher(this.words);
     m.status = this.status.slice();
+    m.heardAt = this.heardAt.slice();
     m.pos = this.pos;
     m.missStreak = this.missStreak;
+    m.missHeard = this.missHeard.slice();
     return m;
   }
 
   snapshot() {
-    this.history.push({ status: this.status.slice(), pos: this.pos, missStreak: this.missStreak });
+    this.history.push({ status: this.status.slice(), heardAt: this.heardAt.slice(), pos: this.pos, missStreak: this.missStreak, missHeard: this.missHeard.slice() });
     if (this.history.length > 200) this.history.shift();
   }
 
@@ -86,10 +92,13 @@ export class Matcher {
 
     const accept = (count) => {
       for (let k = 0; k < count; k++) {
-        this.set(p + k, this.missStreak > 0 && k === 0 ? STATUS.CORRECTED : STATUS.OK);
+        const corrected = this.missStreak > 0 && k === 0;
+        this.set(p + k, corrected ? STATUS.CORRECTED : STATUS.OK);
+        if (corrected) this.heardAt[p] = this.missHeard.join(' ');
       }
       this.pos = p + count;
       this.missStreak = 0;
+      this.missHeard = [];
     };
 
     // 0) الحروف المقطعة: "الف لام ميم" (عدة كلمات مسموعة) = "الٓمٓ" (كلمة واحدة في المصحف)
@@ -104,7 +113,17 @@ export class Matcher {
     // (منها أحكام التجويد بين الكلمتين: من ربهم → مربهم، من بعد → ممبعد). نقدّمها على مطابقة الكلمة
     // الأولى وحدها لو كانت أقرب، حتى لا تُحسب "قلوبهمرض" على "قلوبهم" وتسقط "مرض".
     // ولا نقبل كلمة أقصر من أقصر صيغة موصولة حتى لا تُحتسب الثانية وحدها على أنها الكلمتان (ظلمات ≠ في ظلمات)
-    const single = wordScore(heard, W[p]);
+    let single = wordScore(heard, W[p]);
+    // قال لفظ الآية المتشابهة بدل لفظ هذه الآية؟ (فكلوا/وكلوا، خطيكم/خطيتكم)
+    if (single && single < 1 && this.rivals[p].some((r) => wordScore(heard, { forms: [r.form] }) > single)) {
+      if (!commit) return 0;
+      this.set(p, STATUS.WRONG);
+      this.heardAt[p] = heard;
+      this.pos = p + 1;
+      this.missStreak = 0;
+      this.missHeard = [];
+      return 1;
+    }
     if (W[p + 1]) {
       const joined = joinedWord(W[p], W[p + 1]);
       if (heard.length >= Math.min(...joined.forms.map((f) => f.length))) {
@@ -143,10 +162,13 @@ export class Matcher {
 
     // 7) كلمة غير مطابقة: بعد محاولتين خاطئتين نعتبرها خطأ ونكشفها
     this.missStreak++;
+    this.missHeard.push(heard);
     if (this.missStreak >= 2) {
       this.set(p, STATUS.WRONG);
+      this.heardAt[p] = this.missHeard.join(' ');
       this.pos = p + 1;
       this.missStreak = 0;
+      this.missHeard = [];
     }
     return 1;
   }
@@ -155,15 +177,19 @@ export class Matcher {
   skipTo(k) {
     const p = this.pos;
     for (let j = 0; j < k; j++) this.set(p + j, this.missStreak > 0 && j === 0 ? STATUS.WRONG : STATUS.SKIPPED);
+    if (this.missStreak > 0) this.heardAt[p] = this.missHeard.join(' ');
     this.set(p + k, STATUS.OK);
     this.pos = p + k + 1;
     this.missStreak = 0;
+    this.missHeard = [];
     return 1;
   }
 
   // المستخدم نسي: اكشف الكلمة التالية وسجّلها
   hint() {
     if (this.done) return;
+    if (this.missHeard.length) this.heardAt[this.pos] = this.missHeard.join(' ');
+    this.missHeard = [];
     this.set(this.pos, STATUS.HINT);
     this.pos++;
     this.missStreak = 0;

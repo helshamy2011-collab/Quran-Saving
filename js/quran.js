@@ -6,10 +6,11 @@ let TOTAL = 0;              // 6236
 const wordCache = new Map();
 
 let LAYOUT = null;           // لكل آية: [الصفحة، أول سطر، آخر سطر] في مصحف المدينة
+let SIMILAR = {};            // المتشابهات: آية → [[آية مشابهة، نسبة التشابه]]
 
 export async function loadQuran() {
   if (SURAHS) return;
-  const [res, lay] = await Promise.all([fetch('data/quran.json'), fetch('data/layout.json')]);
+  const [res, lay, sim] = await Promise.all([fetch('data/quran.json'), fetch('data/layout.json'), fetch('data/similar.json').catch(() => null)]);
   if (!res.ok || !lay.ok) throw new Error('تعذر تحميل نص القرآن');
   const data = await res.json();
   SURAHS = data.surahs.map(([name, type, ayahs]) => ({ name, type, ayahs }));
@@ -18,6 +19,86 @@ export async function loadQuran() {
   for (const s of SURAHS) { OFFSETS.push(acc); acc += s.ayahs.length; }
   TOTAL = acc;
   LAYOUT = (await lay.json()).ayahs;
+  try { if (sim?.ok) SIMILAR = (await sim.json()).similar; } catch { SIMILAR = {}; }
+}
+
+// ---------- المتشابهات ----------
+// الآيات المتشابهة لفظياً مع آية (مرتبة من الأكثر تشابهاً)
+export function similarOf(g) {
+  return (SIMILAR[g] || []).map(([h, score]) => ({ g: h, score }));
+}
+
+// مقارنة آيتين كلمة بكلمة: الكلمات التي تنفرد بها كل آية (ليست في الأجزاء المشتركة بنفس الترتيب)
+// محاذاة كلمات آيتين: أزواج الكلمات المشتركة بنفس الترتيب (أطول تتابع مشترك)
+function alignAyahs(g, h) {
+  const a = ayahWords(g).map((w) => w.forms[0]);
+  const b = ayahWords(h).map((w) => w.forms[0]);
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  }
+  const pairs = [];
+  for (let i = 0, j = 0; i < m && j < n;) {
+    if (a[i] === b[j]) { pairs.push([i, j]); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++;
+  }
+  return { m, n, pairs };
+}
+
+export function compareAyahs(g, h) {
+  const { m, n, pairs } = alignAyahs(g, h);
+  const inA = new Set(pairs.map((x) => x[0]));
+  const inB = new Set(pairs.map((x) => x[1]));
+  return {
+    onlyA: [...Array(m).keys()].filter((i) => !inA.has(i)),
+    onlyB: [...Array(n).keys()].filter((j) => !inB.has(j)),
+    identical: inA.size === m && inB.size === n,
+  };
+}
+
+// "منافسو" كل كلمة: الكلمات المقابلة لها في الآيات المتشابهة (فكلوا ↔ وكلوا، خطيكم ↔ خطيتكم)
+// لو قال المستخدم المنافس بدل الكلمة فهذا خلط بين المتشابهات، لا مجرد اختلاف نطق
+const rivalCache = new Map();
+export function rivalsOf(g) {
+  if (rivalCache.has(g)) return rivalCache.get(g);
+  const own = ayahWords(g);
+  const rivals = own.map(() => []);
+  for (const { g: h } of similarOf(g)) {
+    const { m, n, pairs } = alignAyahs(g, h);
+    const other = ayahWords(h);
+    const anchors = [[-1, -1], ...pairs, [m, n]];
+    for (let k = 0; k + 1 < anchors.length; k++) {
+      const [i1, j1] = anchors[k];
+      const [i2, j2] = anchors[k + 1];
+      for (let i = i1 + 1; i < i2; i++) {
+        for (let j = j1 + 1; j < j2; j++) {
+          const f = other[j].forms[0];
+          if (!own[i].forms.includes(f)) rivals[i].push({ form: f, g: h });
+        }
+      }
+    }
+  }
+  rivalCache.set(g, rivals);
+  return rivals;
+}
+
+// هل الخطأ في كلمة من الآية g سببه الخلط مع آية متشابهة؟
+// heard: ما قاله المستخدم مكان الكلمة (مطبّعاً)، st: نوع الخطأ
+// يُرجع الآية المتشابهة لو كان ما قاله من ألفاظها هي، أو لو أسقط كلمة تنفرد بها آيته
+export function confusionFor(g, w, heard, st) {
+  const said = (heard || '').split(' ').filter(Boolean);
+  const own = ayahWords(g)[w];
+  for (const r of rivalsOf(g)[w] || []) {
+    if (said.some((t) => wordScore(t, { forms: [r.form] }) > wordScore(t, own))) return r.g;
+  }
+  for (const { g: h } of similarOf(g)) {
+    const { onlyA, onlyB, identical } = compareAyahs(g, h);
+    if (identical) continue;
+    const other = ayahWords(h);
+    if (said.some((t) => onlyB.some((j) => wordMatches(t, other[j])))) return h;
+    if (st === 'skipped' && onlyA.includes(w)) return h;
+  }
+  return null;
 }
 
 // ---------- مصحف المدينة: الصفحات والأسطر ----------

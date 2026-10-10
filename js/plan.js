@@ -140,7 +140,7 @@ export function todayPlan() {
 // ---------- تسجيل نتيجة جلسة تسميع ----------
 // words: [{g, w}] — status: حالة كل كلمة من المحرك
 // تحديث نقاط الضعف من نتيجة تسميع من الحفظ
-function applyWeak(s, words, status, today) {
+function applyWeak(s, words, status, today, confused = []) {
   words.forEach((word, i) => {
       const st = status[i];
       if (st === STATUS.HIDDEN) return;
@@ -154,6 +154,7 @@ function applyWeak(s, words, status, today) {
         it.box = 0;
         it.mastered = false;
         it.kind = st;
+        if (confused[i] != null) it.with = confused[i]; // خلط بآية متشابهة
         it.last = today;
         it.due = addDays(today, WEAK_INTERVALS[0]);
         it.history = [...(it.history || []), { d: today, st }].slice(-10);
@@ -203,11 +204,11 @@ export function recordPractice({ label, memory = [], reading = [], score }) {
   });
 }
 
-export function recordSession({ taskId, label, words, status, score, reading = false }) {
+export function recordSession({ taskId, label, words, status, score, reading = false, confused = [] }) {
   const today = dayKey();
   update((s) => {
     if (reading) applyReading(s, words, status, today);
-    else applyWeak(s, words, status, today);
+    else applyWeak(s, words, status, today, confused);
 
     const day = s.days[today];
     if (reading) {

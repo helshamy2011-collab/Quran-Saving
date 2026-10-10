@@ -1,12 +1,13 @@
 import {
   loadQuran, surahName, ayahCount, toGlobal, fromGlobal, ayahWords, ayahText,
   describeAyahs, toArabicDigits, surahRangeLabel, describePosition,
+  similarOf, compareAyahs, confusionFor,
 } from './quran.js';
 import {
   getState, update, save, dayKey, formatDay, exportData, importData, resetAll, DEFAULT_SETTINGS,
   getProfiles, activeProfile, switchProfile, addProfile, renameProfile, deleteProfile, peekProfile,
 } from './store.js';
-import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, previewChunk, dueWeak, weakAyahs, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
+import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, previewChunk, dueWeak, weakAyahs, memorizedSet, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
 import { STATUS, isMistake } from './matcher.js';
 import { speechSupported } from './speech.js';
 import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
@@ -41,7 +42,7 @@ function toast(msg, ms = 2600) {
 
 // ---------- التنقل ----------
 // كل شاشة لها مدخل في سجل المتصفح حتى يعمل زر الرجوع في الموبايل
-const TAB_VIEWS = ['home', 'weak', 'free', 'plan', 'people'];
+const TAB_VIEWS = ['home', 'weak', 'free', 'plan', 'people', 'similar'];
 
 function go(view, params = {}, { push = true } = {}) {
   if (cleanup) { cleanup(); cleanup = null; }
@@ -56,7 +57,7 @@ function go(view, params = {}, { push = true } = {}) {
   document.body.dataset.view = view;
   if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
-  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople };
+  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar };
   views[view](params);
   refreshBadge();
   refreshProfileButton();
@@ -204,6 +205,8 @@ function renderStudy() {
       return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}">${w.text}</span>`;
     }).join(' ');
     html += ` <span class="ayah-end">﴿${ar(a)}﴾</span><button type="button" class="ayah-play" data-g="${g}" aria-label="استمع للآية ${ar(a)}">${icon('play', { size: 14 })}</button> `;
+    const sims = similarOf(g).filter((x) => !(x.score === 100 && fromGlobal(x.g).s === s));
+    if (sims.length) html += `<button type="button" class="sim-chip" data-sim="${g}">${icon('layers', { size: 14 })}متشابهة مع ${refOf(sims[0].g)}${sims.length > 1 ? ` و${ar(sims.length - 1)} غيرها` : ''}</button> `;
   }
 
   app.innerHTML = `
@@ -271,6 +274,8 @@ function renderStudy() {
   app.onclick = (e) => {
     const p = e.target.closest('.ayah-play');
     if (p) return p.classList.contains('playing') ? stopAudio() : playQueue([Number(p.dataset.g)]);
+    const sim = e.target.closest('.sim-chip');
+    if (sim) return openCompare(Number(sim.dataset.sim));
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
@@ -359,7 +364,9 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
     const status = rec.status.slice();
     // نحسب الكلمات الصعبة في القراءة قبل التسجيل حتى لا تتأثر بنتيجة هذه الجلسة
     const readIssue = status.map((x, i) => isMistake(x) && isReadIssue(words[i].g, words[i].w));
-    recordSession({ taskId, label, words, status, score: sc, reading });
+    // هل الخطأ خلط بآية متشابهة؟
+    const confused = status.map((x, i) => (isMistake(x) && !reading ? confusionFor(words[i].g, words[i].w, rec.matcher.heardAt[i], x) : null));
+    recordSession({ taskId, label, words, status, score: sc, reading, confused });
     refreshBadge();
     const mistakes = status.map((x, i) => ({ x, i })).filter((o) => isMistake(o.x));
     const passMark = getState().settings.passMark;
@@ -380,7 +387,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
       </div>
       ${verdict}
       ${mistakes.length ? `<h3>${reading ? 'كلمات تعثرت فيها وانت بتقرأ' : memoryCount ? 'حفظتُ لك هذه المواضع للمراجعة' : 'المواضع الملونة'}</h3>
-      <ul class="mistake-list">${mistakes.map(({ x, i }) => mistakeItem(words[i], x, readIssue[i] && !reading)).join('')}</ul>
+      <ul class="mistake-list">${mistakes.map(({ x, i }) => mistakeItem(words[i], x, readIssue[i] && !reading, confused[i])).join('')}</ul>
       <p class="muted small">${reading
         ? 'دي غالباً مشكلة نطق أو البرنامج مش بيفهمها. اسمعها من القارئ وصحّح نطقها، ووقت التسميع لو "غلط" فيها مش هتتحسب خطأ حفظ.'
         : 'ستظهر لك في «نقاط الضعف» غداً، ثم بعد يومين، ثم ٤، ثم أسبوع… حتى تثبت تماماً.'}</p>`
@@ -396,6 +403,8 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
     res.focus({ preventScroll: true });
     res.scrollIntoView({ behavior: scrollBehavior() });
     res.onclick = (e) => {
+      const cmp = e.target.closest('[data-cmp]');
+      if (cmp) { const [x, y] = cmp.dataset.cmp.split(',').map(Number); openCompare(x, y); return; }
       const b = e.target.closest('[data-act]');
       if (!b) return;
       if (b.dataset.act === 'again') go('recite', { taskId, label, ayahs, returnTo, reading });
@@ -416,13 +425,140 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
 }
 
 // سطر في قائمة الأخطاء: الكلمة في سياقها
-function mistakeItem(w, x, readIssue = false) {
+function mistakeItem(w, x, readIssue = false, confusedWith = null) {
   const { s, a } = fromGlobal(w.g);
   const all = ayahWords(w.g);
   const from = Math.max(0, w.w - 2);
   const ctx = all.slice(from, w.w + 3).map((y, k) => (from + k === w.w ? `<mark>${y.text}</mark>` : y.text)).join(' ');
   return `<li><span class="tag ${x}">${STATUS_LABEL[x]}</span><span class="q">${ctx}</span><span class="muted small">${surahName(s)} ${ar(a)}</span>
-    ${readIssue ? '<span class="tag soft" title="البرنامج بيغلط فيها حتى وانت بتقرأ بالنظر">صعبة في القراءة كمان — مش محسوبة خطأ حفظ</span>' : ''}</li>`;
+    ${readIssue ? '<span class="tag soft" title="البرنامج بيغلط فيها حتى وانت بتقرأ بالنظر">صعبة في القراءة كمان — مش محسوبة خطأ حفظ</span>' : ''}
+    ${confusedWith != null ? `<span class="confusion">${icon('layers', { size: 14 })}خلطت مع ${refOf(confusedWith)}
+      <button type="button" class="btn small-btn" data-cmp="${w.g},${confusedWith}">قارن</button></span>` : ''}</li>`;
+}
+
+// ================= المتشابهات =================
+const refOf = (g) => { const { s, a } = fromGlobal(g); return `${surahName(s)} ${ar(a)}`; };
+
+// نص الآية مع تمييز الكلمات التي تنفرد بها عن متشابهتها
+function diffText(g, only) {
+  const set = new Set(only);
+  return ayahWords(g).map((w, i) => (set.has(i) ? `<mark class="diff">${w.text}</mark>` : w.text)).join(' ');
+}
+
+function prevContext(g) {
+  if (g === 0) return '';
+  const { s } = fromGlobal(g);
+  if (fromGlobal(g - 1).s !== s) return '<p class="ctx muted small">أول السورة</p>';
+  const words = ayahWords(g - 1);
+  return `<p class="ctx muted small">قبلها: … ${words.slice(-4).map((w) => w.text).join(' ')}</p>`;
+}
+
+function compareBlock(g, h) {
+  const { onlyA, onlyB, identical } = compareAyahs(g, h);
+  return `<div class="compare-pair">
+    <div class="cmp"><h3>${refOf(g)}</h3>${prevContext(g)}<p class="q">${diffText(g, onlyA)}</p></div>
+    <div class="cmp"><h3>${refOf(h)}</h3>${prevContext(h)}<p class="q">${diffText(h, onlyB)}</p></div>
+    ${identical ? '<p class="muted small">الآيتان متطابقتان في اللفظ — الفرق في موضعهما: ركّز على الآية اللي قبل كل واحدة.</p>' : ''}
+  </div>`;
+}
+
+// نافذة المقارنة: الآية ومتشابهاتها، والكلمات المختلفة ملونة
+function openCompare(g, onlyWith = null) {
+  const list = onlyWith != null ? [onlyWith] : similarOf(g).slice(0, 3).map((x) => x.g);
+  if (!list.length) return;
+  const prevFocus = document.activeElement;
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-backdrop';
+  sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cmp-title">
+    <div class="sheet-head"><h2 id="cmp-title">${icon('layers')}المتشابهات</h2>
+      <button type="button" class="icon-btn" data-close aria-label="إغلاق">${icon('back', { size: 22, cls: 'flip' })}</button></div>
+    <p class="muted small">الكلمات الملونة هي اللي بتفرق بين الآيتين.</p>
+    ${list.map((h) => `${compareBlock(g, h)}
+      <div class="row actions"><button type="button" class="btn primary" data-pair="${g},${h}">${icon('mic')}سمّعهم ورا بعض</button></div>`).join('<hr>')}
+  </div>`;
+  const close = () => { sheet.remove(); document.removeEventListener('keydown', onKey); prevFocus?.focus?.(); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  sheet.addEventListener('click', (e) => {
+    if (e.target === sheet || e.target.closest('[data-close]')) close();
+    const pair = e.target.closest('[data-pair]');
+    if (pair) {
+      close();
+      const ayahs = pair.dataset.pair.split(',').map(Number).sort((x, y) => x - y);
+      go('recite', { taskId: 'similar', label: 'متشابهات', ayahs, returnTo: 'similar' });
+    }
+  });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(sheet);
+  sheet.querySelector('[data-close]').focus();
+}
+
+// أزواج المتشابهات التي حفظ المستخدم الآيتين فيها
+function memorizedPairs() {
+  const known = memorizedSet();
+  const weak = Object.values(getState().weak);
+  const confusedCount = new Map();
+  for (const w of weak) if (w.with != null) {
+    const key = [w.g, w.with].sort((x, y) => x - y).join(',');
+    confusedCount.set(key, (confusedCount.get(key) || 0) + w.misses);
+  }
+  const seen = new Set();
+  const pairs = [];
+  // الأزواج التي خلط بينها المستخدم فعلاً تظهر دائماً وأولاً
+  for (const [key, n] of confusedCount) {
+    const [a, b] = key.split(',').map(Number);
+    const score = similarOf(a).find((x) => x.g === b)?.score ?? 0;
+    seen.add(key);
+    pairs.push({ a, b, score, confused: n });
+  }
+  for (const g of known) {
+    for (const { g: h, score } of similarOf(g)) {
+      if (!known.has(h)) continue;
+      const key = [g, h].sort((x, y) => x - y).join(',');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // الآيات المكررة بنفس اللفظ في نفس السورة (فبأي آلاء ربكما تكذبان) لا تحتاج تفريقاً لفظياً
+      if (score === 100 && fromGlobal(g).s === fromGlobal(h).s) continue;
+      const [a, b] = key.split(',').map(Number);
+      pairs.push({ a, b, score, confused: confusedCount.get(key) || 0 });
+    }
+  }
+  return pairs.sort((x, y) => y.confused - x.confused || y.score - x.score || x.a - y.a);
+}
+
+function renderSimilar() {
+  const pairs = memorizedPairs();
+  const card = (p) => {
+    const { onlyA, onlyB } = compareAyahs(p.a, p.b);
+    const da = onlyA.map((i) => ayahWords(p.a)[i].text).slice(0, 4).join(' ');
+    const db = onlyB.map((i) => ayahWords(p.b)[i].text).slice(0, 4).join(' ');
+    return `<li class="card sim-pair ${p.confused ? 'is-due' : ''}">
+      <div class="weak-meta"><h2>${refOf(p.a)} <span class="muted">و</span> ${refOf(p.b)}</h2>
+        <span class="tag soft">تشابه ${ar(p.score)}٪</span>
+        ${p.confused ? `<span class="tag wrong">خلطت بينهم ${ar(p.confused)} ${p.confused === 1 ? 'مرة' : 'مرات'}</span>` : ''}</div>
+      ${da || db ? `<p class="sim-diff"><span class="q"><mark class="diff">${da}</mark></span> <span class="muted">↔</span> <span class="q"><mark class="diff">${db}</mark></span></p>` : ''}
+      <div class="row actions">
+        <button type="button" class="btn" data-cmp="${p.a},${p.b}">${icon('layers', { size: 18 })}قارن</button>
+        <button type="button" class="btn ${p.confused ? 'primary' : ''}" data-pair="${p.a},${p.b}">${icon('mic', { size: 18 })}سمّعهم ورا بعض</button>
+      </div>
+    </li>`;
+  };
+  app.innerHTML = `
+    <div class="sub-head">
+      <button type="button" class="icon-btn" data-act="back" aria-label="رجوع">${icon('back', { size: 22 })}</button>
+      <div class="sub-title"><h1>المتشابهات في محفوظك</h1><p class="muted small">آيات متشابهة في اللفظ حفظت الاتنين منهم</p></div>
+    </div>
+    <p class="muted">لما تسمّع وتغلط بلفظ الآية المتشابهة، البرنامج بيقولك «خلطت مع آية كذا» وبيسجلها هنا فوق. سمّع الآيتين ورا بعض عشان تثبّت الفرق.</p>
+    ${pairs.length ? `<ul class="people">${pairs.map(card).join('')}</ul>`
+      : `<div class="card empty-state">${icon('layers', { size: 40 })}<h2>لسه مفيش متشابهات في محفوظك</h2>
+        <p class="muted">هتظهر هنا أول ما تحفظ آيتين متشابهتين. وفي شاشة الحفظ هتلاقي علامة «متشابهة» تحت أي آية ليها شبيه في القرآن.</p></div>`}
+  `;
+  app.onclick = (e) => {
+    const b = e.target.closest('[data-act], [data-cmp], [data-pair]');
+    if (!b) return;
+    if (b.dataset.act === 'back') back('weak');
+    if (b.dataset.cmp) { const [a, c] = b.dataset.cmp.split(',').map(Number); openCompare(a, c); }
+    if (b.dataset.pair) go('recite', { taskId: 'similar', label: 'متشابهات', ayahs: b.dataset.pair.split(',').map(Number), returnTo: 'similar' });
+  };
 }
 
 // ================= نقاط الضعف =================
@@ -459,6 +595,8 @@ function renderWeak() {
         <span class="due ${isDue ? 'now' : 'muted'}">${isDue ? `${icon('bell', { size: 14 })}مستحقة الآن` : `المراجعة: ${formatDay(nextDue)}`}</span>
       </header>
       <p class="q">${text}</p>
+      ${(() => { const w = list.find((x) => x.with != null); return w ? `<p class="confusion">${icon('layers', { size: 14 })}خلطت مع ${refOf(w.with)}
+        <button type="button" class="btn small-btn" data-cmp="${g},${w.with}">قارن</button></p>` : ''; })()}
       <div class="row actions">
         <button type="button" class="btn ${isDue ? 'primary' : ''}" data-act="one" data-g="${g}">${icon('mic')}سمّعها</button>
         <button type="button" class="btn ghost danger" data-act="del" data-g="${g}">${icon('trash', { size: 18 })}إزالة</button>
@@ -477,6 +615,7 @@ function renderWeak() {
       <div class="stat"><b>${ar(active.length)}</b><span>تحت المتابعة</span></div>
       <div class="stat"><b>${ar(items.length - active.length)}</b><span>ثبتت والحمد لله</span></div>
     </div>
+    ${(() => { const n = memorizedPairs().length; return n ? `<button type="button" class="card link-card" data-act="similar">${icon('layers')}<span><b>المتشابهات في محفوظك</b><span class="muted small">${ar(n)} ${n === 1 ? 'زوج' : 'أزواج'} من الآيات المتشابهة — فرّق بينهم</span></span></button>` : ''; })()}
     ${groups.length ? `<div class="row actions page-actions">
       ${due.length ? `<button type="button" class="btn primary" data-act="due">${icon('target')}سمّع المستحق الآن · ${ar(weakAyahs(due).length)} آية</button>` : ''}
       <button type="button" class="btn" data-act="all">${icon('layers')}سمّع كل نقاط الضعف</button>
@@ -487,6 +626,8 @@ function renderWeak() {
   `;
 
   app.onclick = (e) => {
+    const cmp = e.target.closest('[data-cmp]');
+    if (cmp) { const [x, y] = cmp.dataset.cmp.split(',').map(Number); openCompare(x, y); return; }
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
@@ -494,6 +635,7 @@ function renderWeak() {
     if (act === 'all') go('recite', { taskId: 'weak-all', label: 'كل نقاط الضعف', ayahs: [...byAyah.keys()].sort((x, y) => x - y).slice(0, 30), returnTo: 'weak' });
     if (act === 'one') go('recite', { taskId: 'weak-one', label: 'نقطة ضعف', ayahs: [Number(b.dataset.g)], returnTo: 'weak' });
     if (act === 'home') go('home');
+    if (act === 'similar') go('similar');
     if (act === 'del') {
       if (!confirm('إزالة هذه الآية من نقاط الضعف؟ لن تظهر لك للمراجعة بعد ذلك.')) return;
       const g = Number(b.dataset.g);

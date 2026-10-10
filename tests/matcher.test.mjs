@@ -174,3 +174,36 @@ test('الحروف المقطعة أثناء الكلام (نتائج مؤقتة
   assert.equal(m.feedInterim(['الف', 'لام', 'ميم']), 3);
   assert.ok(m.done);
 });
+
+test('المتشابهات: قراءة الآية بلفظ متشابهتها تُكتشف كخلط', () => {
+  // البقرة ٥٨ بلفظ الأعراف ١٦١
+  const m = new Matcher(words(2, 58, 58));
+  say(m, 'وإذ قيل لهم اسكنوا هذه القرية وكلوا منها حيث شئتم رغدا وادخلوا الباب سجدا وقولوا حطة نغفر لكم خطيئاتكم وسنزيد المحسنين');
+  const bad = m.status.map((x, i) => [i, x]).filter(([, x]) => x !== STATUS.OK);
+  assert.ok(bad.length >= 3, m.status.join(','));
+  const g = Q.toGlobal(2, 58);
+  const conf = bad.map(([i, x]) => Q.confusionFor(g, m.words[i].w, m.heardAt[i], x)).filter((h) => h != null);
+  assert.ok(conf.length >= 2, `confusions: ${conf}`);
+  assert.ok(conf.every((h) => h === Q.toGlobal(7, 161)));
+});
+
+test('المتشابهات: البقرة ٤٨ بترتيب البقرة ١٢٣', () => {
+  const m = new Matcher(words(2, 48, 48));
+  say(m, 'واتقوا يوما لا تجزي نفس عن نفس شيئا ولا يقبل منها عدل ولا تنفعها شفاعة ولا هم ينصرون');
+  assert.ok(m.score().mistakes >= 1);
+  const g = Q.toGlobal(2, 48);
+  const conf = m.status.map((x, i) => (x !== STATUS.OK ? Q.confusionFor(g, m.words[i].w, m.heardAt[i], x) : null)).filter((h) => h != null);
+  assert.ok(conf.includes(Q.toGlobal(2, 123)), `confusions: ${conf}`);
+});
+
+test('المتشابهات: القراءة الصحيحة لا تتأثر', () => {
+  for (const [s, a, text] of [
+    [2, 58, 'وإذ قلنا ادخلوا هذه القرية فكلوا منها حيث شئتم رغدا وادخلوا الباب سجدا وقولوا حطة نغفر لكم خطاياكم وسنزيد المحسنين'],
+    [7, 161, 'وإذ قيل لهم اسكنوا هذه القرية وكلوا منها حيث شئتم وقولوا حطة وادخلوا الباب سجدا نغفر لكم خطيئاتكم سنزيد المحسنين'],
+    [2, 48, 'واتقوا يوما لا تجزي نفس عن نفس شيئا ولا يقبل منها شفاعة ولا يؤخذ منها عدل ولا هم ينصرون'],
+  ]) {
+    const m = new Matcher(words(s, a, a));
+    say(m, text);
+    assert.equal(m.score().mistakes, 0, `${s}:${a} ${m.status.map((x, i) => `${m.words[i].text}:${x}`).join(' ')}`);
+  }
+});

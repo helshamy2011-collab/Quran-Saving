@@ -579,6 +579,50 @@ input:hover, select:hover { border-color: var(--muted); }
   background: var(--primary-soft); color: var(--ink); border-inline-start: 3px solid var(--primary);
 }
 
+/* ================= المتشابهات ================= */
+mark.diff { background: var(--warn-bg); color: var(--warn); box-shadow: inset 0 -2px 0 var(--warn-line); border-radius: 4px; padding: 0 3px; }
+.sim-chip {
+  display: inline-flex; align-items: center; gap: 4px; vertical-align: middle;
+  min-height: 36px; padding: 0 10px; margin: 0 4px; border-radius: 999px;
+  border: 1px dashed var(--warn-line); background: var(--warn-bg); color: var(--warn);
+  font-family: var(--font-ui); font-size: .75rem; font-weight: 600; cursor: pointer; position: relative;
+}
+.sim-chip::after { content: ''; position: absolute; inset: -4px 0; }
+.confusion {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  color: var(--warn); font-size: .8125rem; font-weight: 600; margin: var(--s1) 0 0;
+}
+.confusion .small-btn { margin-top: 0; }
+.link-card {
+  display: flex; align-items: center; gap: var(--s3); width: 100%; text-align: start; cursor: pointer;
+  font: inherit; color: var(--ink); min-height: var(--tap);
+}
+.link-card > .ic { color: var(--warn); }
+.link-card > span { display: flex; flex-direction: column; }
+.link-card:hover { border-color: var(--warn-line); }
+.sim-diff { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s2) 0 0; }
+.sim-diff .q { font-family: var(--font-quran); font-size: 1.25rem; }
+
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 60; background: var(--scrim);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet {
+  background: var(--surface); width: 100%; max-width: 720px; max-height: 88vh; overflow: auto;
+  border-radius: 20px 20px 0 0; padding: var(--s4); padding-bottom: max(var(--s4), env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, .2);
+}
+@media (min-width: 760px) { .sheet-backdrop { align-items: center; } .sheet { border-radius: 20px; } }
+.sheet-head { display: flex; align-items: center; gap: var(--s2); position: sticky; top: calc(var(--s4) * -1); background: var(--surface); padding-top: var(--s1); }
+.sheet-head h2 { flex: 1; display: flex; align-items: center; gap: var(--s2); margin: 0; }
+.sheet hr { border: 0; border-top: 1px solid var(--line); margin: var(--s4) 0; }
+.compare-pair { display: grid; gap: var(--s3); }
+@media (min-width: 640px) { .compare-pair { grid-template-columns: 1fr 1fr; } .compare-pair > p { grid-column: 1 / -1; } }
+.cmp { background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--s3); min-width: 0; }
+.cmp h3 { margin: 0 0 var(--s1); color: var(--primary); }
+.cmp .q { font-family: var(--font-quran); font-size: 1.375rem; line-height: 2.1; margin: 0; }
+.cmp .ctx { margin: 0 0 var(--s1); }
+
 /* ================= الأشخاص ================= */
 .profile-btn {
   display: inline-flex; align-items: center; gap: var(--s2);
