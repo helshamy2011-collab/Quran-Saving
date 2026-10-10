@@ -106,3 +106,35 @@ test('زيادة واو العطف خطأ', () => {
   say(m, 'أحد');
   assert.equal(m.status[3], STATUS.CORRECTED);
 });
+
+test('التجويد: الإدغام والإقلاب وإدغام التنوين لا تُحسب أخطاء', () => {
+  // من ربهم → مربهم (إدغام) ، هدى من → هدمن (إدغام التنوين)
+  let m = new Matcher(words(2, 5, 5));
+  say(m, 'أولئك على هدى مربهم وأولئك هم المفلحون');
+  assert.equal(m.score().mistakes, 0, m.status.map((s, i) => `${m.words[i].text}:${s}`).join(' '));
+  assert.ok(m.done);
+  m = new Matcher(words(2, 5, 5));
+  say(m, 'أولئك على هدمن ربهم وأولئك هم المفلحون');
+  assert.equal(m.score().mistakes, 0, m.status.map((s, i) => `${m.words[i].text}:${s}`).join(' '));
+
+  // هدى للمتقين → هدللمتقين
+  m = new Matcher(words(2, 2, 2));
+  say(m, 'ذلك الكتاب لا ريب فيه هدللمتقين');
+  assert.equal(m.score().mistakes, 0, m.status.map((s, i) => `${m.words[i].text}:${s}`).join(' '));
+  assert.ok(m.done);
+
+  // من بعد → ممبعد (إقلاب)
+  m = new Matcher(words(2, 27, 27));
+  say(m, 'الذين ينقضون عهد الله ممبعد ميثاقه ويقطعون ما أمر الله به أن يوصل ويفسدون في الأرض أولئك هم الخاسرون');
+  assert.equal(m.score().mistakes, 0, m.status.map((s, i) => `${m.words[i].text}:${s}`).join(' '));
+  assert.ok(m.done);
+});
+
+test('التجويد: القراءة بالإملاء العادي ما زالت مقبولة، وإسقاط كلمة ما زال يُكتشف', () => {
+  const m = new Matcher(words(2, 5, 5));
+  say(m, 'أولئك على هدى من ربهم وأولئك هم المفلحون');
+  assert.equal(m.score().mistakes, 0);
+  const m2 = new Matcher(words(2, 5, 5));
+  say(m2, 'أولئك على هدى ربهم وأولئك هم المفلحون'); // أسقط "من"
+  assert.equal(m2.score().mistakes, 1);
+});

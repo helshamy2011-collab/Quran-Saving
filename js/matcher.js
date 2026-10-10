@@ -1,7 +1,7 @@
 // محرك المطابقة: يقارن الكلمات المسموعة بنص المصحف كلمة كلمة
 // ويحدد: صحيح / خطأ / سقط (تخطّاه) / نسيه (طلب تلميح) / تردد ثم صحّح
 
-import { normalizeArabic, wordMatches, joinedWord } from './quran.js';
+import { normalizeArabic, wordMatches, wordScore, joinedWord } from './quran.js';
 
 export const STATUS = {
   HIDDEN: 'hidden',
@@ -90,13 +90,22 @@ export class Matcher {
       this.missStreak = 0;
     };
 
-    // 1) مطابقة مباشرة
-    if (wordMatches(heard, W[p])) { accept(1); return 1; }
-    // 2) كلمتان مسموعتان = كلمة واحدة في المصحف (يا أيها → يٰٓأيها)
+    // 1) كلمة مسموعة = كلمتان في المصحف موصولتان
+    // (منها أحكام التجويد بين الكلمتين: من ربهم → مربهم، من بعد → ممبعد). نقدّمها على مطابقة الكلمة
+    // الأولى وحدها لو كانت أقرب، حتى لا تُحسب "قلوبهمرض" على "قلوبهم" وتسقط "مرض".
+    // ولا نقبل كلمة أقصر من أقصر صيغة موصولة حتى لا تُحتسب الثانية وحدها على أنها الكلمتان (ظلمات ≠ في ظلمات)
+    const single = wordScore(heard, W[p]);
+    if (W[p + 1]) {
+      const joined = joinedWord(W[p], W[p + 1]);
+      if (heard.length >= Math.min(...joined.forms.map((f) => f.length))) {
+        const js = wordScore(heard, joined);
+        if (js && js > single) { accept(2); return 1; }
+      }
+    }
+    // 2) مطابقة مباشرة
+    if (single) { accept(1); return 1; }
+    // 3) كلمتان مسموعتان = كلمة واحدة في المصحف (يا أيها → يٰٓأيها)
     if (nextHeard && wordMatches(heard + nextHeard, W[p])) { accept(1); return 2; }
-    // 3) كلمة مسموعة = كلمتان في المصحف
-    if (W[p + 1] && heard.length >= W[p].forms[0].length + W[p + 1].forms[0].length
-      && wordMatches(heard, joinedWord(W[p], W[p + 1]))) { accept(2); return 1; }
 
     if (!commit) return 0;
 

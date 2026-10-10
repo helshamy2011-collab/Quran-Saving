@@ -134,6 +134,11 @@ function sim(a, b) {
 
 // هل الكلمة المسموعة (مطبّعة) تطابق كلمة المصحف؟
 export function wordMatches(heard, word) {
+  return wordScore(heard, word) > 0;
+}
+
+// درجة التطابق (0 = لا تطابق، وإلا نسبة التشابه) — للمفاضلة بين قراءتين محتملتين
+export function wordScore(heard, word) {
   let best = 0;
   for (const f of word.forms) {
     // زيادة أو حذف واو/فاء العطف خطأ حقيقي في الحفظ (واحد ≠ أحد، فلا ≠ لا)
@@ -150,9 +155,45 @@ export function wordMatches(heard, word) {
   }
   const len = Math.max(heard.length, word.forms[0].length);
   const threshold = len <= 2 ? 1 : len <= 3 ? 0.66 : 0.7;
-  return best >= threshold;
+  return best >= threshold ? best : 0;
+}
+
+// ---------- أحكام التجويد بين كلمتين ----------
+// التعرف الصوتي يكتب غالباً الكلمات بإملائها العادي مهما كان النطق، لكنه أحياناً يكتب ما سمعه فعلاً:
+// إدغام (من ربهم → مربهم)، إقلاب (من بعد → ممبعد)، إدغام التنوين (هدى للمتقين → هدللمتقين).
+// الرسم العثماني يحدد هذه المواضع بدقة، فنولّد صيغة النطق الموصول ونقبلها.
+const TANWEEN = /[\u064B-\u064D\u0656\u0657\u065E\u08F0-\u08F2]/;
+const IQLAB = /\u06E2/;           // ميم صغيرة: إقلاب النون أو التنوين ميماً
+
+// هل أول حرف في الكلمة مشدد؟ (علامة الإدغام في الكلمة التالية) — لا يشمل "ال" الشمسية
+function firstLetterDoubled(raw) {
+  const m = raw.match(/^([\u0621-\u064A])([\u064B-\u0652\u0656-\u065E\u0670\u06DF-\u06ED]*)/);
+  return !!m && m[1] !== '\u0671' && m[2].includes('\u0651');
+}
+
+export function tajweedJoins(w1, w2) {
+  const a = normalizeArabic(w1.text);
+  const b = normalizeArabic(w2.text);
+  const out = [];
+  if (IQLAB.test(w1.text)) {
+    // من بعد → ممبعد ، سميع بصير → سميعمبصير
+    out.push((a.endsWith('ن') ? a.slice(0, -1) : a) + 'م' + b);
+  }
+  if (firstLetterDoubled(w2.text)) {
+    if (TANWEEN.test(w1.text)) {
+      // هدى للمتقين → هدللمتقين ، خيرا لهم → خيرللهم
+      out.push(a.replace(/[اي]$/, '') + b, a + b);
+    } else {
+      // إدغام الحرف الأخير في أول التالية: من ربهم → مربهم ، قد تبين → قتبين
+      out.push(a.slice(0, -1) + b);
+    }
+  }
+  return out;
 }
 
 export function joinedWord(w1, w2) {
-  return { text: `${w1.text} ${w2.text}`, forms: w1.forms.flatMap((a) => w2.forms.map((b) => a + b)) };
+  const forms = new Set(w1.forms.flatMap((a) => w2.forms.map((b) => a + b)));
+  for (const f of tajweedJoins(w1, w2)) forms.add(f);
+  forms.delete('');
+  return { text: `${w1.text} ${w2.text}`, forms: [...forms] };
 }
