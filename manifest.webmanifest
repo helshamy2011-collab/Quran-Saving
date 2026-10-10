@@ -1,0 +1,15 @@
+{
+  "name": "رفيق الحفظ — حفظ القرآن الكريم",
+  "short_name": "رفيق الحفظ",
+  "description": "خطة حفظ ومراجعة، وتسميع بالصوت مع إخفاء النص ومتابعة نقاط الضعف",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f3ea",
+  "theme_color": "#0f5c4d",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

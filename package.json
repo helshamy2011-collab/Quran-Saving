@@ -1,0 +1,10 @@
+{
+  "name": "quran-saving",
+  "private": true,
+  "description": "رفيق الحفظ — برنامج لحفظ القرآن الكريم بخطة وتسميع صوتي ومتابعة نقاط الضعف",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

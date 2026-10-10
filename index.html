@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>رفيق الحفظ</title>
+  <meta name="description" content="برنامج لحفظ القرآن الكريم: خطة حفظ ومراجعة، وتسميع بالصوت مع إخفاء النص ومتابعة نقاط الضعف">
+  <meta name="theme-color" content="#0f5c4d">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Noto+Kufi+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="32" height="32">
+      <span>رفيق الحفظ</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-view="home" class="active">اليوم</button>
+      <button data-view="weak">نقاط الضعف <span class="badge" id="weak-badge" hidden></span></button>
+      <button data-view="free">تسميع حر</button>
+      <button data-view="plan">الخطة</button>
+    </nav>
+  </header>
+
+  <main id="app">
+    <div class="loading">جارٍ تحميل المصحف…</div>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
