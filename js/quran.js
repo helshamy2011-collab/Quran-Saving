@@ -87,12 +87,37 @@ export function ayahText(g) {
 // كلمات الآية: النص المعروض + صيغ مطبّعة للمقارنة مع ما يقوله المستخدم
 export function ayahWords(g) {
   if (wordCache.has(g)) return wordCache.get(g);
-  const words = ayahText(g).split(/\s+/).filter(Boolean).map((text) => ({
-    text,
-    forms: uthmaniForms(text),
-  }));
+  const { s, a } = fromGlobal(g);
+  const words = ayahText(g).split(/\s+/).filter(Boolean).map((text, i) => {
+    const word = { text, forms: uthmaniForms(text) };
+    if (i === 0 && isMuqattaat(s, a)) addLetterNames(word);
+    return word;
+  });
   wordCache.set(g, words);
   return words;
+}
+
+// ---------- الحروف المقطعة ----------
+// تُكتب كلمة واحدة (الٓمٓ) وتُقرأ بأسماء الحروف (ألف لام ميم)، والتعرف الصوتي قد يكتبها
+// كلمات منفصلة "الف لام ميم" أو كلمة واحدة "ياسين" أو كما تُكتب "الم"
+const MUQATTAAT_SURAHS = new Set([2, 3, 7, 10, 11, 12, 13, 14, 15, 19, 20, 26, 27, 28, 29, 30, 31, 32, 36, 38, 40, 41, 42, 43, 44, 45, 46, 50, 68]);
+const LETTER_NAMES = {
+  'ا': ['الف'], 'ل': ['لام'], 'م': ['ميم'], 'ص': ['صاد'], 'ر': ['را'], 'ك': ['كاف'], 'ه': ['ها', 'هه'],
+  'ي': ['يا'], 'ع': ['عين'], 'ط': ['طا'], 'س': ['سين', 'سن'], 'ح': ['حا'], 'ق': ['قاف'], 'ن': ['نون'],
+};
+
+export function isMuqattaat(s, a) {
+  return (a === 1 && MUQATTAAT_SURAHS.has(s)) || (s === 42 && a === 2);
+}
+
+function addLetterNames(word) {
+  const letters = [...normalizeArabic(word.text)];
+  if (!letters.every((c) => LETTER_NAMES[c])) return;
+  // كل التوليفات الممكنة لأسماء الحروف (عددها صغير)
+  let combos = [''];
+  for (const c of letters) combos = combos.flatMap((pre) => LETTER_NAMES[c].map((n) => pre + n));
+  word.forms = [...new Set([...word.forms, ...combos])];
+  word.letters = letters.length; // أقصى عدد كلمات مسموعة قد تُكوّنها
 }
 
 export const ayahWordCount = (g) => ayahWords(g).length;
@@ -200,7 +225,9 @@ export function wordScore(heard, word) {
     }
   }
   const len = Math.max(heard.length, word.forms[0].length);
-  const threshold = len <= 2 ? 1 : len <= 3 ? 0.66 : 0.7;
+  let threshold = len <= 2 ? 1 : len <= 3 ? 0.66 : 0.7;
+  // الحروف المقطعة: حرف واحد مختلف = خطأ (ألف لام را ≠ ألف لام ميم)
+  if (word.letters) threshold = Math.max(threshold, 0.85);
   return best >= threshold ? best : 0;
 }
 

@@ -58,7 +58,7 @@ export class Matcher {
     const before = this.pos;
     const t = tokens.map(normalizeArabic).filter(Boolean);
     for (let i = 0; i < t.length && !this.done; i++) {
-      i += this.step(t[i], t[i + 1], true) - 1;
+      i += this.step(t, i, true) - 1;
     }
     return this.pos - before;
   }
@@ -70,7 +70,7 @@ export class Matcher {
     let used = 0;
     while (used < t.length && !this.done) {
       if (!t[used]) { used++; continue; }
-      const n = this.step(t[used], t[used + 1], false);
+      const n = this.step(t, used, false);
       if (!n) break;
       used += n;
     }
@@ -78,9 +78,11 @@ export class Matcher {
   }
 
   // يعالج كلمة مسموعة واحدة؛ يُرجع عدد الكلمات المسموعة المستهلكة (0 = لم يتقدم في الوضع المؤقت)
-  step(heard, nextHeard, commit) {
+  step(tokens, i, commit) {
     const W = this.words;
     const p = this.pos;
+    const heard = tokens[i];
+    const nextHeard = tokens[i + 1];
 
     const accept = (count) => {
       for (let k = 0; k < count; k++) {
@@ -89,6 +91,14 @@ export class Matcher {
       this.pos = p + count;
       this.missStreak = 0;
     };
+
+    // 0) الحروف المقطعة: "الف لام ميم" (عدة كلمات مسموعة) = "الٓمٓ" (كلمة واحدة في المصحف)
+    if (W[p].letters) {
+      for (let k = Math.min(W[p].letters, tokens.length - i); k >= 2; k--) {
+        const joined = tokens.slice(i, i + k).join('');
+        if (joined && wordMatches(joined, W[p])) { accept(1); return k; }
+      }
+    }
 
     // 1) كلمة مسموعة = كلمتان في المصحف موصولتان
     // (منها أحكام التجويد بين الكلمتين: من ربهم → مربهم، من بعد → ممبعد). نقدّمها على مطابقة الكلمة
