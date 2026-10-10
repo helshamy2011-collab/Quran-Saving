@@ -568,6 +568,11 @@ input:hover, select:hover { border-color: var(--muted); }
 .file-btn:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
 .danger-zone { border-top: 1px solid var(--line); margin-top: var(--s4); padding-top: var(--s3); }
 
+.small-btn { margin-top: var(--s2); font-size: .875rem; }
+.projection .verdict { margin-top: var(--s2); }
+.verdict.small span { display: block; }
+.tabs button { white-space: nowrap; }
+@media (min-width: 760px) and (max-width: 1000px) { .brand span { display: none; } }
 .position { display: flex; align-items: center; gap: var(--s1); color: var(--muted); margin: 2px 0 0; }
 .first-portion:not(:empty) {
   margin-top: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--radius-sm);

@@ -706,6 +706,16 @@ async function saveBackupFile() {
   toast('اتحفظ الملف في التنزيلات');
 }
 
+// تنبيه لو الخطة لا تغطي القرآن كله بسبب سورة البداية (مثلاً: البداية الفاتحة والاتجاه نحو الفاتحة)
+function partialWarning(set) {
+  const full = set.direction === 'backward' ? set.startSurah === 114 : set.startSurah === 1;
+  if (full) return '';
+  const end = set.direction === 'backward' ? 'الفاتحة' : 'الناس';
+  const from = set.direction === 'backward' ? 'الناس' : 'الفاتحة';
+  return `<div class="verdict warn small">${icon('alert', { size: 18 })}<span>الخطة دي من سورة ${surahName(set.startSurah)} لحد سورة ${end} بس، مش القرآن كله.
+    <button type="button" class="btn small-btn" data-act="full-start">ابدأ من ${from} بدلاً من كده</button></span></div>`;
+}
+
 // ================= الخطة والإعدادات =================
 function renderPlan({ welcome = false } = {}) {
   const st = getState();
@@ -726,11 +736,11 @@ function renderPlan({ welcome = false } = {}) {
       <fieldset class="card">
         <legend>${icon('sprout')}الحفظ الجديد</legend>
         <div class="field-row">
-          <label class="field"><span>ابدأ من سورة</span><select name="startSurah">${surahOptions(s.startSurah)}</select></label>
           <label class="field"><span>الاتجاه</span><select name="direction">
-            <option value="backward" ${s.direction === 'backward' ? 'selected' : ''}>نزولاً نحو الفاتحة (جزء عمّ أولاً)</option>
-            <option value="forward" ${s.direction === 'forward' ? 'selected' : ''}>صعوداً نحو الناس</option>
+            <option value="backward" ${s.direction === 'backward' ? 'selected' : ''}>من الناس ناحية الفاتحة (جزء عمّ الأول)</option>
+            <option value="forward" ${s.direction === 'forward' ? 'selected' : ''}>من الفاتحة ناحية الناس</option>
           </select></label>
+          <label class="field"><span>ابدأ من سورة</span><select name="startSurah">${surahOptions(s.startSurah)}</select></label>
         </div>
         <div class="field">
           <span id="amount-label">المقدار اليومي</span>
@@ -848,12 +858,18 @@ function renderPlan({ welcome = false } = {}) {
          <div class="proj-stats">
            <div><b>${ar(p.ayahs)}</b><span>آية متبقية</span></div>
            <div><b>${ar(p.studyDays)}</b><span>يوم حفظ</span></div>
-           <div><b>${ar(Math.max(1, Math.round(p.calendarDays / 30)))}</b><span>شهر تقريباً</span></div>
+           ${p.calendarDays < 60
+             ? `<div><b>${ar(p.calendarDays)}</b><span>${p.calendarDays === 1 ? 'يوم' : 'يوم بالإجازات'}</span></div>`
+             : `<div><b>${ar(Math.round(p.calendarDays / 30))}</b><span>شهر تقريباً</span></div>`}
          </div>
          <p class="small">تنتهي تقريباً <b>${formatDay(p.end)} ${ar(p.end.slice(0, 4))}</b> عند سورة ${surahName(p.last.s)}.</p>
-         <p class="muted small">لختم القرآن كاملاً اجعل البداية من الناس نزولاً أو من الفاتحة صعوداً.</p>`
+         ${partialWarning(read())}`
       : `<div class="proj-head">${icon('checkCircle')}<b>كل الآيات في اتجاه هذه الخطة محفوظة</b></div>`;
     document.getElementById('prior-count').textContent = ar(form.querySelectorAll('input[name=prior]:checked').length);
+  };
+  // تغيير الاتجاه يحرك سورة البداية لأول السكة: الناس نزولاً أو الفاتحة صعوداً
+  form.direction.onchange = () => {
+    form.startSurah.value = form.direction.value === 'backward' ? '114' : '1';
   };
   form.oninput = () => {
     showProj();
@@ -889,6 +905,10 @@ function renderPlan({ welcome = false } = {}) {
     const act = b.dataset.act;
     if (act === 'juz30') {
       form.querySelectorAll('input[name=prior]').forEach((c) => { if (Number(c.value) >= 78) c.checked = true; });
+      showProj();
+    }
+    if (act === 'full-start') {
+      form.startSurah.value = form.direction.value === 'backward' ? '114' : '1';
       showProj();
     }
     if (act === 'clearprior') { form.querySelectorAll('input[name=prior]').forEach((c) => { c.checked = false; }); showProj(); }
