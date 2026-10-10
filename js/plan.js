@@ -115,10 +115,10 @@ export function todayPlan() {
   return {
     today,
     tasks: [
-      { id: 'weak', title: 'نقاط الضعف', icon: '🎯', desc: 'الكلمات التي أخطأت فيها أو نسيتها وحان وقت مراجعتها', ayahs: weakAyahs(weak), done: !weak.length && day.weakDone, count: weak.length },
-      { id: 'new', title: 'الحفظ الجديد', icon: '🌱', desc: 'احفظ الورد ثم سمّعه', ...day.tasks.new },
-      { id: 'near', title: 'المراجعة القريبة', icon: '🔁', desc: `ما حفظته في آخر ${toArabicDigits(getState().settings.nearDays)} أيام`, ...day.tasks.near },
-      { id: 'far', title: 'المراجعة البعيدة', icon: '📖', desc: 'دورة على كل محفوظك القديم', ...day.tasks.far },
+      { id: 'weak', title: 'نقاط الضعف', icon: 'target', desc: 'الكلمات التي أخطأت فيها أو نسيتها وحان وقت مراجعتها', ayahs: weakAyahs(weak), done: !weak.length && day.weakDone, count: weak.length },
+      { id: 'new', title: 'الحفظ الجديد', icon: 'sprout', desc: 'احفظ الورد ثم سمّعه', ...day.tasks.new },
+      { id: 'near', title: 'المراجعة القريبة', icon: 'repeat', desc: `ما حفظته في آخر ${toArabicDigits(getState().settings.nearDays)} أيام`, ...day.tasks.near },
+      { id: 'far', title: 'المراجعة البعيدة', icon: 'book', desc: 'دورة على كل محفوظك القديم', ...day.tasks.far },
     ],
   };
 }

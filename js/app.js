@@ -6,6 +6,7 @@ import { getState, update, save, dayKey, formatDay, exportData, importData, rese
 import { todayPlan, recordSession, stats, projection, dueWeak, weakAyahs, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
 import { Matcher, STATUS, isMistake } from './matcher.js';
 import { Listener, speechSupported } from './speech.js';
+import { icon } from './icons.js';
 
 const app = document.getElementById('app');
 const tabs = document.getElementById('tabs');
@@ -27,6 +28,8 @@ const RECITERS = {
 };
 
 const ar = toArabicDigits;
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const scrollBehavior = () => (reduceMotion() ? 'auto' : 'smooth');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function toast(msg, ms = 2600) {
@@ -38,14 +41,36 @@ function toast(msg, ms = 2600) {
 }
 
 // ---------- التنقل ----------
-function go(view, params = {}) {
+// كل شاشة لها مدخل في سجل المتصفح حتى يعمل زر الرجوع في الموبايل
+const TAB_VIEWS = ['home', 'weak', 'free', 'plan'];
+
+function go(view, params = {}, { push = true } = {}) {
   if (cleanup) { cleanup(); cleanup = null; }
-  for (const b of tabs.querySelectorAll('button')) b.classList.toggle('active', b.dataset.view === view);
+  const tab = TAB_VIEWS.includes(view) ? view : null;
+  for (const b of tabs.querySelectorAll('button')) {
+    if (b.dataset.view === tab) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  }
+  // شاشتا الحفظ والتسميع تملآن الشاشة ويحل شريط التحكم محل شريط التنقل
+  document.body.classList.toggle('immersive', !tab);
+  if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
   const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite };
   views[view](params);
   refreshBadge();
 }
+
+// الرجوع من الشاشات الفرعية: نستخدم سجل المتصفح لو أمكن
+function back(fallback = 'home') {
+  if (history.state?.view && history.length > 1) history.back();
+  else go(fallback);
+}
+
+window.addEventListener('popstate', (e) => {
+  const view = e.state?.view ?? location.hash.slice(1);
+  // شاشتا الحفظ والتسميع تحتاجان بيانات لا تُحفظ في السجل → نرجع للرئيسية
+  go(TAB_VIEWS.includes(view) ? view : 'home', {}, { push: false });
+});
 
 tabs.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-view]');
@@ -73,50 +98,50 @@ function renderHome() {
     let actions = '';
     if (!t.ayahs.length) {
       const empty = {
-        weak: 'لا توجد نقاط ضعف مستحقة اليوم 👌',
-        new: isStudyDay ? 'ما شاء الله! أتممت كل آيات الخطة 🎉' : 'اليوم يوم مراجعة فقط (لا حفظ جديد)',
+        weak: 'لا توجد نقاط ضعف مستحقة اليوم',
+        new: isStudyDay ? 'ما شاء الله! أتممت كل آيات الخطة' : 'اليوم يوم مراجعة فقط (لا حفظ جديد)',
         near: 'لا يوجد حفظ قريب بعد — سيظهر هنا ما تحفظه',
         far: 'سيظهر هنا محفوظك القديم بعد أن تحفظ',
       };
-      range = `<div class="muted small">${empty[t.id]}</div>`;
+      range = `<p class="muted small empty">${empty[t.id]}</p>`;
     } else {
-      range = `<div class="range">${esc(describeAyahs(t.ayahs))} <span class="muted small">(${ar(t.ayahs.length)} آية)</span></div>`;
+      range = `<p class="range">${esc(describeAyahs(t.ayahs))} <span class="muted small">· ${ar(t.ayahs.length)} آية</span></p>`;
       if (t.id === 'new' && !t.done) {
-        actions = `<button class="btn" data-act="study">📖 احفظ واستمع</button>
-                   <button class="btn primary" data-act="recite" data-task="new">🎤 سمّع</button>`;
+        actions = `<button type="button" class="btn" data-act="study">${icon('headphones')}احفظ واستمع</button>
+                   <button type="button" class="btn primary" data-act="recite" data-task="new">${icon('mic')}سمّع</button>`;
       } else {
-        actions = `<button class="btn ${t.done ? '' : 'primary'}" data-act="recite" data-task="${t.id}">🎤 ${t.done ? 'سمّع مرة أخرى' : 'سمّع'}</button>`;
+        actions = `<button type="button" class="btn ${t.done ? '' : 'primary'}" data-act="recite" data-task="${t.id}">${icon(t.done ? 'repeat' : 'mic')}${t.done ? 'سمّع مرة أخرى' : 'سمّع'}</button>`;
       }
-      if (t.done && t.accuracy != null) actions += ` <span class="tag ok">أتممتها بإتقان ${ar(t.accuracy)}٪</span>`;
+      if (t.done && t.accuracy != null) actions += ` <span class="tag ok">${icon('check', { size: 14 })}بإتقان ${ar(t.accuracy)}٪</span>`;
     }
-    return `<div class="card task ${t.done ? 'done' : ''}">
-      <div class="icon">${t.icon}</div>
+    return `<section class="card task ${t.done ? 'done' : ''} ${t.ayahs.length ? '' : 'idle'}" aria-label="${t.title}${t.done ? ' — تمت' : ''}">
+      <div class="task-icon ${t.id}">${icon(t.done ? 'checkCircle' : t.icon, { size: 22 })}</div>
       <div class="body">
-        <h3>${t.title}${t.id === 'weak' && t.count ? ` <span class="badge">${ar(t.count)} كلمة</span>` : ''}</h3>
-        <div class="muted small">${t.desc}</div>
+        <h2 class="task-title">${t.title}${t.id === 'weak' && t.count ? ` <span class="badge">${ar(t.count)} كلمة</span>` : ''}</h2>
+        <p class="muted small">${t.desc}</p>
         ${range}
-        <div class="row">${actions}</div>
+        ${actions ? `<div class="row actions">${actions}</div>` : ''}
       </div>
-    </div>`;
+    </section>`;
   };
 
   const pending = plan.tasks.filter((t) => t.ayahs.length && !t.done).length;
 
   app.innerHTML = `
-    <div class="row" style="margin-bottom:12px">
-      <div><h1>${formatDay(plan.today)}</h1>
-      <div class="muted">${pending ? `باقي لك ${ar(pending)} ${pending === 1 ? 'مهمة' : 'مهام'} اليوم` : 'أتممت ورد اليوم، بارك الله فيك 🌟'}</div></div>
-    </div>
-    ${weakTask.count ? `<div class="alert">🎯 <b>تذكير:</b> عندك <b>${ar(weakTask.count)}</b> كلمة أخطأت فيها أو نسيتها من قبل وحان وقت مراجعتها. ابدأ بها قبل أي شيء.</div>` : ''}
-    <div class="grid" style="margin-bottom:14px">
+    <header class="page-head">
+      <h1>${formatDay(plan.today)}</h1>
+      <p class="muted">${pending ? `باقي لك ${ar(pending)} ${pending === 1 ? 'مهمة' : 'مهام'} اليوم` : 'أتممت ورد اليوم، بارك الله فيك'}</p>
+    </header>
+    ${weakTask.count ? `<div class="alert" role="note">${icon('bell')}<div><b>تذكير:</b> عندك <b>${ar(weakTask.count)}</b> كلمة أخطأت فيها أو نسيتها من قبل وحان وقت مراجعتها. ابدأ بها قبل أي شيء.</div></div>` : ''}
+    <div class="stats">
       <div class="stat"><b>${ar(s.ayahs)}</b><span>آية محفوظة</span></div>
       <div class="stat"><b>${ar(s.pages.toFixed(1))}</b><span>صفحة تقريباً</span></div>
-      <div class="stat"><b>${ar(s.streak)}</b><span>يوم متتالٍ 🔥</span></div>
+      <div class="stat"><b>${icon('flame', { size: 18, cls: 'flame' })}${ar(s.streak)}</b><span>يوم متتالٍ</span></div>
       <div class="stat"><b>${ar(s.weakActive)}</b><span>نقطة ضعف تحت المتابعة</span></div>
     </div>
-    <div class="card">
-      <div class="row small muted"><span>التقدم في حفظ القرآن</span><span class="spacer"></span><span>${ar(s.percent.toFixed(1))}٪</span></div>
-      <div class="progress"><i style="width:${Math.min(100, s.percent)}%"></i></div>
+    <div class="card progress-card">
+      <div class="row small"><span>التقدم في حفظ القرآن</span><span class="spacer"></span><b>${ar(s.percent.toFixed(1))}٪</b></div>
+      <div class="progress" role="progressbar" aria-label="التقدم في حفظ القرآن" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${s.percent.toFixed(1)}"><i style="width:${Math.min(100, s.percent)}%"></i></div>
     </div>
     ${plan.tasks.map(taskCard).join('')}
     ${recentSessions()}
@@ -136,11 +161,11 @@ function renderHome() {
 function recentSessions() {
   const list = getState().sessions.slice(0, 8);
   if (!list.length) return '';
-  return `<div class="card"><h3>آخر جلسات التسميع</h3><ul class="mistake-list">
+  return `<section class="card"><h2>آخر جلسات التسميع</h2><ul class="mistake-list">
     ${list.map((x) => `<li><span>${esc(x.label)}</span><span class="spacer"></span>
       <span class="tag ${x.accuracy >= 90 ? 'ok' : x.accuracy >= 70 ? 'corrected' : 'wrong'}">${ar(x.accuracy)}٪</span>
       <span class="muted small">${ar(x.mistakes)} خطأ · ${formatDay(x.date)}</span></li>`).join('')}
-  </ul></div>`;
+  </ul></section>`;
 }
 
 // ================= شاشة الحفظ (قبل التسميع) =================
@@ -160,37 +185,46 @@ function renderStudy() {
       const wk = weak[`${g}:${i}`];
       return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}">${w.text}</span>`;
     }).join(' ');
-    html += ` <span class="ayah-end">﴿${ar(a)}﴾</span><button class="ayah-play" data-g="${g}" title="استمع للآية">▶</button> `;
+    html += ` <span class="ayah-end">﴿${ar(a)}﴾</span><button type="button" class="ayah-play" data-g="${g}" aria-label="استمع للآية ${ar(a)}">${icon('play', { size: 14 })}</button> `;
   }
 
   app.innerHTML = `
-    <div class="recite-head">
-      <button class="btn ghost" data-act="back">→ رجوع</button>
-      <h2>الحفظ الجديد</h2>
-      <span class="muted">${esc(describeAyahs(t.ayahs))}</span>
+    <div class="sub-head">
+      <button type="button" class="icon-btn" data-act="back" aria-label="رجوع">${icon('back', { size: 22 })}</button>
+      <div class="sub-title"><h1>الحفظ الجديد</h1><p class="muted small">${esc(describeAyahs(t.ayahs))}</p></div>
     </div>
-    <div class="card small">
-      <b>طريقة مقترحة:</b> استمع للآية ٣ مرات وأنت تنظر للمصحف، ثم اقرأها ٥ مرات، ثم اقرأها مغمض العينين.
-      بعد ما تثبت كل الآيات اربطها ببعض، ثم اضغط "سمّع" — لازم تحقق ${ar(getState().settings.passMark)}٪ لاعتماد الحفظ.
-    </div>
-    <div class="row" style="margin-bottom:10px">
-      <label>تكرار كل آية:
-        <select id="repeat">${[1, 3, 5, 10].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${ar(n)} مرات</option>`).join('')}</select>
+    <details class="card tip">
+      <summary>${icon('info', { size: 18 })}طريقة الحفظ المقترحة</summary>
+      <ol>
+        <li>استمع للآية ٣ مرات وأنت تنظر للمصحف.</li>
+        <li>اقرأها ٥ مرات، ثم اقرأها مغمض العينين.</li>
+        <li>بعد ما تثبت كل الآيات اربطها ببعض.</li>
+        <li>اضغط «سمّع» — لازم تحقق ${ar(getState().settings.passMark)}٪ لاعتماد الحفظ.</li>
+      </ol>
+    </details>
+    <div class="player card">
+      <label class="inline-field">تكرار كل آية
+        <select id="repeat">${[1, 3, 5, 10].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${ar(n)} ${n > 2 && n < 11 ? 'مرات' : 'مرة'}</option>`).join('')}</select>
       </label>
-      <button class="btn" data-act="play-all">▶ استمع للورد كله</button>
-      <button class="btn" data-act="stop">⏹ إيقاف</button>
-      <span class="muted small">القارئ: ${RECITERS[reciter] || reciter}</span>
+      <button type="button" class="btn" data-act="play-all" id="play-all">${icon('play', { size: 16 })}<span>استمع للورد كله</span></button>
+      <p class="muted small">القارئ: ${RECITERS[reciter] || reciter}</p>
     </div>
     <div class="mushaf study">${html}</div>
     <div class="dock"><div class="inner">
-      <span class="heard">لما تحس إنك حفظت، ابدأ التسميع والنص هيكون مخفي.</span>
-      <button class="btn primary big" data-act="recite">🎤 جاهز — سمّع</button>
+      <p class="heard">لما تحس إنك حفظت، ابدأ التسميع والنص هيكون مخفي.</p>
+      <button type="button" class="btn primary big" data-act="recite">${icon('mic')}جاهز — سمّع</button>
     </div></div>
   `;
 
+  const playAllBtn = document.getElementById('play-all');
+  const setPlayAll = (playing) => {
+    playAllBtn.dataset.act = playing ? 'stop' : 'play-all';
+    playAllBtn.innerHTML = playing ? `${icon('stop', { size: 16 })}<span>إيقاف</span>` : `${icon('play', { size: 16 })}<span>استمع للورد كله</span>`;
+  };
   const stopAudio = () => {
     if (audio) { audio.pause(); audio = null; }
-    app.querySelectorAll('.ayah-play.playing').forEach((b) => b.classList.remove('playing'));
+    app.querySelectorAll('.ayah-play.playing').forEach((b) => { b.classList.remove('playing'); b.innerHTML = icon('play', { size: 14 }); });
+    setPlayAll(false);
   };
 
   // تشغيل قائمة آيات مع تكرار كل آية
@@ -200,10 +234,12 @@ function renderStudy() {
     const queue = list.flatMap((g) => Array(rep).fill(g));
     const next = () => {
       const g = queue.shift();
-      app.querySelectorAll('.ayah-play.playing').forEach((b) => b.classList.remove('playing'));
-      if (g == null) { audio = null; return; }
+      app.querySelectorAll('.ayah-play.playing').forEach((b) => { b.classList.remove('playing'); b.innerHTML = icon('play', { size: 14 }); });
+      if (g == null) { audio = null; setPlayAll(false); return; }
+      setPlayAll(true);
       const { s, a } = fromGlobal(g);
-      app.querySelector(`.ayah-play[data-g="${g}"]`)?.classList.add('playing');
+      const btn = app.querySelector(`.ayah-play[data-g="${g}"]`);
+      if (btn) { btn.classList.add('playing'); btn.innerHTML = icon('pause', { size: 14 }); }
       const el = new Audio(`https://everyayah.com/data/${reciter}/${String(s).padStart(3, '0')}${String(a).padStart(3, '0')}.mp3`);
       audio = el;
       el.onended = () => { if (audio === el) next(); };
@@ -215,11 +251,11 @@ function renderStudy() {
 
   app.onclick = (e) => {
     const p = e.target.closest('.ayah-play');
-    if (p) return playQueue([Number(p.dataset.g)]);
+    if (p) return p.classList.contains('playing') ? stopAudio() : playQueue([Number(p.dataset.g)]);
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
-    if (act === 'back') go('home');
+    if (act === 'back') back();
     if (act === 'play-all') playQueue(t.ayahs);
     if (act === 'stop') stopAudio();
     if (act === 'recite') go('recite', { taskId: 'new', label: 'الحفظ الجديد', ayahs: t.ayahs });
@@ -249,40 +285,40 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
     const n = ayahWords(g).length;
     for (let i = 0; i < n; i++, idx++) {
       const wk = st.settings.warnWeak && weak[`${g}:${i}`] && !weak[`${g}:${i}`].mastered;
-      html += `<span class="w hidden ${wk ? 'weak-mark' : ''}" data-i="${idx}">${words[idx].text}</span> `;
+      html += `<span class="w hidden ${wk ? 'weak-mark' : ''}" data-i="${idx}" aria-hidden="true">${words[idx].text}</span> `;
     }
     html += `<span class="ayah-end">﴿${ar(a)}﴾</span> `;
   }
 
   app.innerHTML = `
-    <div class="recite-head">
-      <button class="btn ghost" data-act="back">→ رجوع</button>
-      <h2>${esc(label)}</h2>
-      <span class="muted small">${esc(describeAyahs(ayahs))}</span>
-      <span class="spacer"></span>
+    <div class="sub-head">
+      <button type="button" class="icon-btn" data-act="back" aria-label="رجوع">${icon('back', { size: 22 })}</button>
+      <div class="sub-title"><h1>${esc(label)}</h1><p class="muted small">${esc(describeAyahs(ayahs))}</p></div>
       <span id="score" class="tag ok"></span>
     </div>
-    <div class="progress" style="margin-bottom:10px"><i id="bar" style="width:0"></i></div>
-    ${manual ? `<div class="alert">متصفحك لا يدعم التعرف على الصوت. استخدم Chrome أو Edge أو Safari للتسميع بالصوت.
-      الآن تقدر تسمّع بنفسك: اضغط <b>"✓ قلتها صح"</b> لكشف الكلمة، أو <b>"💡 نسيتها"</b> لو نسيت.</div>` : ''}
-    <div class="legend">
-      <span><i style="background:var(--hidden)"></i>مخفية</span>
-      <span><i style="background:var(--bad-bg);border:1px solid var(--bad)"></i>خطأ / أسقطها</span>
-      <span><i style="background:var(--hint-bg);border:1px solid var(--hint)"></i>نسيتها</span>
-      <span><i style="background:var(--warn-bg);border:1px solid var(--warn)"></i>تردد</span>
-      ${st.settings.warnWeak ? '<span><i style="box-shadow:inset 0 -3px 0 var(--warn);background:var(--hidden)"></i>أخطأت فيها سابقاً — ركّز</span>' : ''}
-    </div>
-    <div class="mushaf" id="mushaf">${html}</div>
-    <p class="muted small" style="margin-top:8px">💡 لو البرنامج فهمك غلط، اضغط على الكلمة الحمراء لتصحيحها (والعكس).</p>
-    <div id="result"></div>
+    <div class="progress" id="bar-wrap" role="progressbar" aria-label="نسبة ما سمّعته" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="bar" style="width:0"></i></div>
+    ${manual ? `<div class="alert" role="note">${icon('info')}<div>متصفحك لا يدعم التعرف على الصوت. استخدم Chrome أو Edge أو Safari للتسميع بالصوت.
+      الآن تقدر تسمّع بنفسك: اضغط <b>«قلتها صح»</b> لكشف الكلمة، أو <b>«نسيتها»</b> لو نسيت.</div></div>` : ''}
+    <ul class="legend" aria-label="دليل الألوان">
+      <li><i class="sw hidden"></i>مخفية</li>
+      <li><i class="sw wrong"></i>خطأ / أسقطها</li>
+      <li><i class="sw hint"></i>نسيتها</li>
+      <li><i class="sw corrected"></i>تردد</li>
+      ${st.settings.warnWeak ? '<li><i class="sw weak"></i>أخطأت فيها سابقاً — ركّز</li>' : ''}
+    </ul>
+    <div class="mushaf" id="mushaf" aria-label="نص الآيات — يظهر مع التسميع">${html}</div>
+    <p class="muted small helper">${icon('info', { size: 16 })}لو البرنامج فهمك غلط، اضغط على الكلمة الملونة لتصحيحها (والعكس).</p>
+    <div id="result" tabindex="-1"></div>
     <div class="dock" id="dock"><div class="inner">
       ${manual
-        ? '<button class="btn primary big" data-act="ok">✓ قلتها صح</button>'
-        : '<button class="mic" id="mic" data-act="mic" title="ابدأ/أوقف الاستماع">🎤</button>'}
-      <div class="heard" id="heard">${manual ? 'مسافة = صح · H = نسيتها · Z = تراجع' : 'اضغط على الميكروفون وابدأ القراءة…'}</div>
-      <button class="btn" data-act="hint" id="hint-btn">💡 نسيتها</button>
-      <button class="btn" data-act="undo" title="تراجع">↩</button>
-      <button class="btn" data-act="finish">إنهاء</button>
+        ? `<button type="button" class="btn primary big" data-act="ok">${icon('check')}قلتها صح</button>`
+        : `<button type="button" class="mic" id="mic" data-act="mic" aria-label="ابدأ الاستماع" aria-pressed="false">${icon('mic', { size: 28 })}</button>`}
+      <p class="heard" id="heard">${manual ? 'مسافة = صح · H = نسيتها · Z = تراجع' : 'اضغط على الميكروفون وابدأ القراءة…'}</p>
+      <div class="dock-actions">
+        <button type="button" class="btn" data-act="hint" id="hint-btn">${icon('bulb', { size: 18 })}نسيتها</button>
+        <button type="button" class="btn icon-only" data-act="undo" aria-label="تراجع عن آخر كلمة">${icon('undo', { size: 18 })}</button>
+        <button type="button" class="btn icon-only" data-act="finish" aria-label="إنهاء التسميع">${icon('flag', { size: 18 })}</button>
+      </div>
     </div></div>
   `;
 
@@ -301,17 +337,21 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
       const weakMark = el.classList.contains('weak-mark');
       el.className = `w ${stt}${weakMark ? ' weak-mark' : ''}`;
       if (stt !== STATUS.HIDDEN) el.classList.add('revealed');
+      el.toggleAttribute('aria-hidden', stt === STATUS.HIDDEN);
+      if (STATUS_LABEL[stt]) el.title = `${STATUS_LABEL[stt]} — اضغط للتصحيح`; else el.removeAttribute('title');
       if (stt !== prevStatus[i] && stt !== STATUS.HIDDEN) el.classList.add('just');
     });
     if (!matcher.done) {
       spans[matcher.pos].classList.add('current');
       const r = spans[matcher.pos].getBoundingClientRect();
-      if (r.bottom > window.innerHeight - 140 || r.top < 120) spans[matcher.pos].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (r.bottom > window.innerHeight - 140 || r.top < 120) spans[matcher.pos].scrollIntoView({ block: 'center', behavior: scrollBehavior() });
     }
     if (matcher.status.some((x, i) => x !== prevStatus[i])) lastProgress = Date.now();
     prevStatus = matcher.status.slice();
     const sc = matcher.score();
-    document.getElementById('bar').style.width = `${(sc.done / sc.total) * 100}%`;
+    const pct = Math.round((sc.done / sc.total) * 100);
+    document.getElementById('bar').style.width = `${pct}%`;
+    document.getElementById('bar-wrap').setAttribute('aria-valuenow', pct);
     const scoreEl = document.getElementById('score');
     scoreEl.textContent = sc.done ? `${ar(sc.accuracy)}٪ · ${ar(sc.mistakes)} خطأ` : '';
     scoreEl.className = `tag ${sc.accuracy >= 90 ? 'ok' : sc.accuracy >= 70 ? 'corrected' : 'wrong'}`;
@@ -352,8 +392,10 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
     },
     onState(state) {
       if (!micBtn) return;
-      micBtn.classList.toggle('on', state === 'listening' || listener.active);
-      micBtn.textContent = listener.active ? '⏸' : '🎤';
+      micBtn.classList.toggle('on', listener.active);
+      micBtn.setAttribute('aria-pressed', String(listener.active));
+      micBtn.setAttribute('aria-label', listener.active ? 'أوقف الاستماع' : 'ابدأ الاستماع');
+      micBtn.innerHTML = icon(listener.active ? 'pause' : 'mic', { size: 28 });
     },
     onError(msg) { toast(msg, 5000); heardEl.textContent = msg; micBtn?.classList.remove('on'); },
   });
@@ -362,7 +404,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
   const stallTimer = setInterval(() => {
     if (!finished && listener?.active && Date.now() - lastProgress > 7000) {
       hintBtn.classList.add('nudge');
-      heardEl.textContent = 'توقفت؟ لو نسيت الكلمة اضغط "نسيتها" وسأكشفها لك وأسجلها للمراجعة.';
+      heardEl.textContent = 'توقفت؟ لو نسيت الكلمة اضغط «نسيتها» وسأكشفها لك وأسجلها للمراجعة.';
     }
   }, 1000);
 
@@ -379,7 +421,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
     listener?.stop();
     clearInterval(stallTimer);
     const sc = matcher.score();
-    if (!sc.done) { go(returnTo); return; }
+    if (!sc.done) { back(returnTo); return; }
     recordSession({ taskId, label, words, status: matcher.status, score: sc });
     refreshBadge();
     const mistakes = matcher.status.map((x, i) => ({ x, i })).filter((o) => isMistake(o.x));
@@ -388,34 +430,36 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
     let verdict = '';
     if (taskId === 'new') {
       verdict = complete && sc.accuracy >= passMark
-        ? `<p>✅ تم اعتماد الحفظ الجديد. ستظهر هذه الآيات في المراجعة القريبة الأيام القادمة.</p>`
-        : `<p>⚠️ تحتاج ${ar(passMark)}٪ على الأقل مع إكمال الورد لاعتماد الحفظ. راجع المواضع الملونة وأعد التسميع.</p>`;
+        ? `<p class="verdict ok">${icon('checkCircle')}<span>تم اعتماد الحفظ الجديد. ستظهر هذه الآيات في المراجعة القريبة الأيام القادمة.</span></p>`
+        : `<p class="verdict warn">${icon('alert')}<span>تحتاج ${ar(passMark)}٪ على الأقل مع إكمال الورد لاعتماد الحفظ. راجع المواضع الملونة وأعد التسميع.</span></p>`;
     }
     document.getElementById('dock').hidden = true;
     const res = document.getElementById('result');
-    res.innerHTML = `<div class="card">
-      <div class="row">
+    res.innerHTML = `<section class="card result" aria-labelledby="result-title">
+      <div class="result-top">
         <div class="result-score ${sc.accuracy < 80 ? 'low' : ''}">${ar(sc.accuracy)}٪</div>
-        <div><b>${sc.accuracy >= 95 ? 'ممتاز، بارك الله فيك' : sc.accuracy >= 80 ? 'جيد، ثبّت المواضع الملونة' : 'تحتاج تثبيتاً أكثر'}</b>
-        <div class="muted small">${ar(sc.done)} من ${ar(sc.total)} كلمة · ${ar(sc.mistakes)} خطأ</div></div>
+        <div><h2 id="result-title">${sc.accuracy >= 95 ? 'ممتاز، بارك الله فيك' : sc.accuracy >= 80 ? 'جيد، ثبّت المواضع الملونة' : 'تحتاج تثبيتاً أكثر'}</h2>
+        <p class="muted small">${ar(sc.done)} من ${ar(sc.total)} كلمة · ${ar(sc.mistakes)} خطأ</p></div>
       </div>
       ${verdict}
-      ${mistakes.length ? `<h3 style="margin-top:10px">حفظتُ لك هذه المواضع للمراجعة:</h3><ul class="mistake-list">
+      ${mistakes.length ? `<h3>حفظتُ لك هذه المواضع للمراجعة</h3><ul class="mistake-list">
         ${mistakes.map(({ x, i }) => {
           const w = words[i];
           const { s, a } = fromGlobal(w.g);
           const all = ayahWords(w.g);
-          const ctx = all.slice(Math.max(0, w.w - 2), w.w + 3).map((y, k) => (Math.max(0, w.w - 2) + k === w.w ? `<b style="color:var(--bad)">${y.text}</b>` : y.text)).join(' ');
+          const ctx = all.slice(Math.max(0, w.w - 2), w.w + 3).map((y, k) => (Math.max(0, w.w - 2) + k === w.w ? `<mark>${y.text}</mark>` : y.text)).join(' ');
           return `<li><span class="tag ${x}">${STATUS_LABEL[x]}</span><span class="q">${ctx}</span><span class="muted small">${surahName(s)} ${ar(a)}</span></li>`;
         }).join('')}
-      </ul><p class="muted small">ستظهر لك في "نقاط الضعف" غداً، ثم بعد يومين، ثم ٤، ثم أسبوع… حتى تثبت تماماً.</p>` : '<p>لا أخطاء! 🌟</p>'}
-      <div class="row" style="margin-top:10px">
-        <button class="btn primary" data-act="again">🔁 سمّع مرة أخرى</button>
-        ${mistakes.length ? '<button class="btn" data-act="again-weak">🎯 سمّع آيات الأخطاء فقط</button>' : ''}
-        <button class="btn" data-act="back">رجوع</button>
+      </ul><p class="muted small">ستظهر لك في «نقاط الضعف» غداً، ثم بعد يومين، ثم ٤، ثم أسبوع… حتى تثبت تماماً.</p>` : '<p class="verdict ok">' + icon('award') + '<span>لا أخطاء، ما شاء الله!</span></p>'}
+      <div class="row actions">
+        <button type="button" class="btn primary" data-act="again">${icon('repeat')}سمّع مرة أخرى</button>
+        ${mistakes.length ? `<button type="button" class="btn" data-act="again-weak">${icon('target')}آيات الأخطاء فقط</button>` : ''}
+        <button type="button" class="btn ghost" data-act="back">رجوع</button>
       </div>
-    </div>`;
-    res.scrollIntoView({ behavior: 'smooth' });
+    </section>`;
+    // ننقل التركيز للنتيجة حتى يقرأها قارئ الشاشة ولا يضيع التركيز مع اختفاء شريط التحكم
+    res.focus({ preventScroll: true });
+    res.scrollIntoView({ behavior: scrollBehavior() });
     res.onclick = (e) => {
       const b = e.target.closest('[data-act]');
       if (!b) return;
@@ -424,7 +468,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
         const list = [...new Set(mistakes.map(({ i }) => words[i].g))];
         go('recite', { taskId: 'weak', label: 'آيات الأخطاء', ayahs: list, returnTo });
       }
-      if (b.dataset.act === 'back') go(returnTo);
+      if (b.dataset.act === 'back') back(returnTo);
     };
   }
 
@@ -438,7 +482,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
     const b = e.target.closest('[data-act]');
     if (!b || b.closest('#result')) return;
     const act = b.dataset.act;
-    if (act === 'back') go(returnTo);
+    if (act === 'back') back(returnTo);
     if (act === 'mic') { if (listener.active) listener.stop(); else { listener.start(); lastProgress = Date.now(); } }
     if (act === 'hint') doHint();
     if (act === 'ok') doOk();
@@ -489,35 +533,40 @@ function renderWeak() {
     const misses = list.reduce((n, x) => n + x.misses, 0);
     const box = Math.min(...list.map((x) => x.box || 0));
     const nextDue = list.map((x) => x.due).sort()[0];
-    return `<div class="card weak-ayah">
-      <div class="row small"><b>${surahName(s)} ${ar(a)}</b>
+    const isDue = nextDue <= today;
+    return `<article class="card weak-ayah ${isDue ? 'is-due' : ''}">
+      <header class="weak-meta">
+        <h2>${surahName(s)} ${ar(a)}</h2>
         <span class="tag wrong">${ar(misses)} ${misses === 1 ? 'خطأ' : 'أخطاء'}</span>
-        <span class="boxes" title="مراحل التثبيت">${WEAK_INTERVALS.map((_, k) => `<i class="${k < box ? 'on' : ''}"></i>`).join('')}</span>
-        <span class="spacer"></span>
-        <span class="${nextDue <= today ? '' : 'muted'}">${nextDue <= today ? '⏰ مستحقة الآن' : `المراجعة: ${formatDay(nextDue)}`}</span>
+        <span class="boxes" role="img" aria-label="مرحلة التثبيت ${ar(box)} من ${ar(WEAK_INTERVALS.length)}" title="مراحل التثبيت">${WEAK_INTERVALS.map((_, k) => `<i class="${k < box ? 'on' : ''}"></i>`).join('')}</span>
+        <span class="due ${isDue ? 'now' : 'muted'}">${isDue ? `${icon('bell', { size: 14 })}مستحقة الآن` : `المراجعة: ${formatDay(nextDue)}`}</span>
+      </header>
+      <p class="q">${text}</p>
+      <div class="row actions">
+        <button type="button" class="btn ${isDue ? 'primary' : ''}" data-act="one" data-g="${g}">${icon('mic')}سمّعها</button>
+        <button type="button" class="btn ghost danger" data-act="del" data-g="${g}">${icon('trash', { size: 18 })}إزالة</button>
       </div>
-      <div class="q">${text}</div>
-      <div class="row">
-        <button class="btn small primary" data-act="one" data-g="${g}">🎤 سمّعها</button>
-        <button class="btn small ghost danger" data-act="del" data-g="${g}">إزالة</button>
-      </div>
-    </div>`;
+    </article>`;
   };
 
   app.innerHTML = `
-    <h1>نقاط الضعف</h1>
-    <p class="muted">كل كلمة تخطئ فيها أو تنساها أو تتردد فيها تُحفظ هنا تلقائياً، وتظهر لك للمراجعة على فترات متباعدة
-      (${WEAK_INTERVALS.map(ar).join('، ')} يوم). كل مرة تقرأها صح تنتقل لمرحلة أبعد، ولو أخطأت فيها ترجع من الأول.</p>
-    <div class="grid" style="margin-bottom:14px">
+    <header class="page-head">
+      <h1>نقاط الضعف</h1>
+      <p class="muted">كل كلمة تخطئ فيها أو تنساها أو تتردد فيها تُحفظ هنا، وتظهر لك على فترات متباعدة
+        (${WEAK_INTERVALS.map(ar).join('، ')} يوم). كل مرة تقرأها صح تنتقل لمرحلة أبعد، ولو أخطأت ترجع من الأول.</p>
+    </header>
+    <div class="stats three">
       <div class="stat"><b>${ar(due.length)}</b><span>مستحقة اليوم</span></div>
       <div class="stat"><b>${ar(active.length)}</b><span>تحت المتابعة</span></div>
       <div class="stat"><b>${ar(items.length - active.length)}</b><span>ثبتت والحمد لله</span></div>
     </div>
-    <div class="row" style="margin-bottom:14px">
-      <button class="btn primary" data-act="due" ${due.length ? '' : 'disabled'}>🎯 سمّع المستحق الآن (${ar(weakAyahs(due).length)} آية)</button>
-      <button class="btn" data-act="all" ${active.length ? '' : 'disabled'}>سمّع كل نقاط الضعف</button>
+    ${groups.length ? `<div class="row actions page-actions">
+      ${due.length ? `<button type="button" class="btn primary" data-act="due">${icon('target')}سمّع المستحق الآن · ${ar(weakAyahs(due).length)} آية</button>` : ''}
+      <button type="button" class="btn" data-act="all">${icon('layers')}سمّع كل نقاط الضعف</button>
     </div>
-    ${groups.length ? groups.map(ayahCard).join('') : '<div class="card muted">لا توجد نقاط ضعف حتى الآن. ابدأ التسميع وسيتابع البرنامج أخطاءك تلقائياً.</div>'}
+    ${groups.map(ayahCard).join('')}` : `<div class="card empty-state">${icon('award', { size: 40 })}<h2>لا توجد نقاط ضعف</h2>
+      <p class="muted">ابدأ التسميع وسيتابع البرنامج أخطاءك تلقائياً.</p>
+      <button type="button" class="btn primary" data-act="home">${icon('today')}ورد اليوم</button></div>`}
   `;
 
   app.onclick = (e) => {
@@ -527,7 +576,9 @@ function renderWeak() {
     if (act === 'due') go('recite', { taskId: 'weak', label: 'نقاط الضعف', ayahs: weakAyahs(due), returnTo: 'weak' });
     if (act === 'all') go('recite', { taskId: 'weak-all', label: 'كل نقاط الضعف', ayahs: [...byAyah.keys()].sort((x, y) => x - y).slice(0, 30), returnTo: 'weak' });
     if (act === 'one') go('recite', { taskId: 'weak-one', label: 'نقطة ضعف', ayahs: [Number(b.dataset.g)], returnTo: 'weak' });
+    if (act === 'home') go('home');
     if (act === 'del') {
+      if (!confirm('إزالة هذه الآية من نقاط الضعف؟ لن تظهر لك للمراجعة بعد ذلك.')) return;
       const g = Number(b.dataset.g);
       update((s) => { for (const k of Object.keys(s.weak)) if (s.weak[k].g === g) delete s.weak[k]; });
       go('weak');
@@ -545,17 +596,22 @@ function surahOptions(selected) {
 function renderFree() {
   const last = JSON.parse(localStorage.getItem('free-last') || '{"s":1,"from":1,"to":7}');
   app.innerHTML = `
-    <h1>تسميع حر</h1>
-    <p class="muted">اختر أي سورة أو مقطع وسمّعه. الأخطاء هنا أيضاً تُضاف لنقاط الضعف.</p>
-    <div class="card">
+    <header class="page-head">
+      <h1>تسميع حر</h1>
+      <p class="muted">اختر أي سورة أو مقطع وسمّعه. الأخطاء هنا أيضاً تُضاف لنقاط الضعف.</p>
+    </header>
+    <form class="card form" id="free-form">
       <label class="field"><span>السورة</span><select id="fs">${surahOptions(last.s)}</select></label>
-      <div class="row">
-        <label class="field"><span>من الآية</span><input type="number" id="ff" min="1" value="${last.from}" style="width:90px"></label>
-        <label class="field"><span>إلى الآية</span><input type="number" id="ft" min="1" value="${last.to}" style="width:90px"></label>
-        <button class="btn small" id="fall" style="margin-top:14px">السورة كاملة</button>
+      <div class="field-row">
+        <label class="field"><span>من الآية</span><input type="number" id="ff" min="1" inputmode="numeric" value="${last.from}"></label>
+        <label class="field"><span>إلى الآية</span><input type="number" id="ft" min="1" inputmode="numeric" value="${last.to}"></label>
       </div>
-      <button class="btn primary big" id="fgo">🎤 ابدأ التسميع</button>
-    </div>`;
+      <p class="muted small" id="fhelp"></p>
+      <div class="row actions">
+        <button type="submit" class="btn primary big">${icon('mic')}ابدأ التسميع</button>
+        <button type="button" class="btn" id="fall">السورة كاملة</button>
+      </div>
+    </form>`;
   const fs = document.getElementById('fs');
   const ff = document.getElementById('ff');
   const ft = document.getElementById('ft');
@@ -564,11 +620,15 @@ function renderFree() {
     ff.max = n; ft.max = n;
     if (Number(ft.value) > n) ft.value = n;
     if (Number(ff.value) > n) ff.value = 1;
+    document.getElementById('fhelp').textContent = `سورة ${surahName(Number(fs.value))}: ${ar(n)} آية`;
   };
+  ff.onchange = clamp;
+  ft.onchange = clamp;
   fs.onchange = () => { ff.value = 1; ft.value = ayahCount(Number(fs.value)); clamp(); };
   document.getElementById('fall').onclick = () => { ff.value = 1; ft.value = ayahCount(Number(fs.value)); };
   clamp();
-  document.getElementById('fgo').onclick = () => {
+  document.getElementById('free-form').onsubmit = (e) => {
+    e.preventDefault();
     const s = Number(fs.value);
     let from = Math.max(1, Number(ff.value) || 1);
     let to = Math.min(ayahCount(s), Number(ft.value) || from);
@@ -588,79 +648,104 @@ function renderPlan({ welcome = false } = {}) {
   const unitOpts = (sel) => Object.entries(UNIT_LABEL).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
   const prior = new Set(s.prior);
 
+  const options = (list, sel, fmt) => list.map((n) => `<option value="${n}" ${n === sel ? 'selected' : ''}>${fmt(n)}</option>`).join('');
   app.innerHTML = `
-    ${welcome ? `<div class="card"><h1>أهلاً بك في رفيق الحفظ 🌿</h1>
-      <p>البرنامج يعمل لك خطة يومية: <b>حفظ جديد</b> + <b>مراجعة قريبة</b> + <b>مراجعة بعيدة</b> + <b>نقاط ضعفك</b>.
+    ${welcome ? `<section class="card welcome">
+      <img src="icons/icon.svg" alt="" width="56" height="56">
+      <h1>أهلاً بك في رفيق الحفظ</h1>
+      <p>خطة يومية فيها <b>حفظ جديد</b> و<b>مراجعة قريبة</b> و<b>مراجعة بعيدة</b> و<b>نقاط ضعفك</b>.
       وقت التسميع يكون النص مخفياً، وكل كلمة تقولها صح تظهر، ولو أخطأت أو نسيت يحفظها ويذكّرك بها حتى تثبت.</p>
-      <p class="muted small">ابدأ بضبط الخطة المناسبة لك (تقدر تغيرها في أي وقت).</p></div>` : '<h1>خطة الحفظ</h1>'}
-    <form class="card" id="pf">
-      <h2>الحفظ الجديد</h2>
-      <div class="row">
-        <label class="field"><span>ابدأ من سورة</span><select name="startSurah">${surahOptions(s.startSurah)}</select></label>
-        <label class="field"><span>الاتجاه</span><select name="direction">
-          <option value="backward" ${s.direction === 'backward' ? 'selected' : ''}>نزولاً نحو الفاتحة (مثلاً من الناس ← جزء عمّ أولاً)</option>
-          <option value="forward" ${s.direction === 'forward' ? 'selected' : ''}>صعوداً نحو الناس (من البقرة مثلاً)</option>
-        </select></label>
-      </div>
-      <div class="row">
-        <label class="field"><span>المقدار اليومي</span><input type="number" name="amount" min="1" step="0.5" value="${s.amount}" style="width:90px"></label>
-        <label class="field"><span>&nbsp;</span><select name="unit">${unitOpts(s.unit)}</select></label>
-      </div>
-      <label class="field"><span>أيام الحفظ الجديد</span>
-        <div class="chips">${WEEKDAYS.map((d, i) => `<label class="chip"><input type="checkbox" name="day" value="${i}" ${s.studyDays.includes(i) ? 'checked' : ''}>${d}</label>`).join('')}</div>
-        <span class="muted small" style="font-weight:400">الأيام غير المختارة تكون للمراجعة فقط.</span>
-      </label>
-      <label class="field"><span>نسبة الإتقان المطلوبة لاعتماد الحفظ</span>
-        <select name="passMark">${[80, 85, 90, 95, 100].map((n) => `<option value="${n}" ${n === s.passMark ? 'selected' : ''}>${ar(n)}٪</option>`).join('')}</select></label>
-
-      <h2 style="margin-top:8px">المراجعة</h2>
-      <div class="row">
-        <label class="field"><span>المراجعة القريبة: آخر</span>
-          <select name="nearDays">${[3, 5, 7, 10, 14, 30].map((n) => `<option value="${n}" ${n === s.nearDays ? 'selected' : ''}>${ar(n)} أيام</option>`).join('')}</select></label>
-        <label class="field"><span>المراجعة البعيدة يومياً</span><input type="number" name="farAmount" min="0.5" step="0.5" value="${s.farAmount}" style="width:90px"></label>
-        <label class="field"><span>&nbsp;</span><select name="farUnit">${unitOpts(s.farUnit)}</select></label>
-      </div>
-      <details ${welcome ? 'open' : ''}><summary>سور حفظتها من قبل (${ar(prior.size)}) — تدخل في المراجعة البعيدة</summary>
-        <div class="surah-grid chips" style="margin-top:8px">
-          ${Array.from({ length: 114 }, (_, k) => k + 1).map((n) => `<label class="chip"><input type="checkbox" name="prior" value="${n}" ${prior.has(n) ? 'checked' : ''}>${surahName(n)}</label>`).join('')}
+      <p class="muted small">اضبط الخطة المناسبة لك — تقدر تغيرها في أي وقت.</p></section>`
+    : '<header class="page-head"><h1>خطة الحفظ</h1></header>'}
+    <form class="form" id="pf" novalidate>
+      <fieldset class="card">
+        <legend>${icon('sprout')}الحفظ الجديد</legend>
+        <div class="field-row">
+          <label class="field"><span>ابدأ من سورة</span><select name="startSurah">${surahOptions(s.startSurah)}</select></label>
+          <label class="field"><span>الاتجاه</span><select name="direction">
+            <option value="backward" ${s.direction === 'backward' ? 'selected' : ''}>نزولاً نحو الفاتحة (جزء عمّ أولاً)</option>
+            <option value="forward" ${s.direction === 'forward' ? 'selected' : ''}>صعوداً نحو الناس</option>
+          </select></label>
         </div>
-        <div class="row" style="margin-top:6px">
-          <button type="button" class="btn small" data-act="juz30">تحديد جزء عمّ</button>
-          <button type="button" class="btn small" data-act="clearprior">إلغاء الكل</button>
+        <div class="field">
+          <span id="amount-label">المقدار اليومي</span>
+          <div class="combo" role="group" aria-labelledby="amount-label">
+            <input type="number" name="amount" min="0.5" step="0.5" inputmode="decimal" value="${s.amount}" aria-label="المقدار">
+            <select name="unit" aria-label="الوحدة">${unitOpts(s.unit)}</select>
+          </div>
         </div>
-      </details>
+        <fieldset class="field" aria-describedby="days-help days-error">
+          <legend>أيام الحفظ الجديد</legend>
+          <div class="chips">${WEEKDAYS.map((d, i) => `<label class="chip"><input type="checkbox" name="day" value="${i}" ${s.studyDays.includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
+          <p class="muted small" id="days-help">الأيام غير المختارة تكون للمراجعة فقط.</p>
+          <p class="error small" id="days-error" hidden>${icon('alert', { size: 16 })}اختر يوماً واحداً على الأقل للحفظ.</p>
+        </fieldset>
+        <label class="field"><span>نسبة الإتقان المطلوبة لاعتماد الحفظ</span>
+          <select name="passMark">${options([80, 85, 90, 95, 100], s.passMark, (n) => `${ar(n)}٪`)}</select></label>
+      </fieldset>
 
-      <h2 style="margin-top:14px">التسميع والتذكير</h2>
-      <div class="row">
-        <label class="field"><span>لهجة التعرف على الصوت</span><select name="lang">
-          ${[['ar-SA', 'العربية (السعودية)'], ['ar-EG', 'العربية (مصر)'], ['ar-AE', 'العربية (الإمارات)'], ['ar-JO', 'العربية (الأردن)'], ['ar-MA', 'العربية (المغرب)']].map(([v, l]) => `<option value="${v}" ${v === s.lang ? 'selected' : ''}>${l}</option>`).join('')}
-        </select></label>
-        <label class="field"><span>القارئ (للاستماع)</span><select name="reciter">
-          ${Object.entries(RECITERS).map(([v, l]) => `<option value="${v}" ${v === s.reciter ? 'selected' : ''}>${l}</option>`).join('')}
-        </select></label>
-      </div>
-      <label class="chip" style="margin-bottom:12px"><input type="checkbox" name="warnWeak" ${s.warnWeak ? 'checked' : ''}>نبّهني على مواضع أخطائي السابقة وقت التسميع (خط برتقالي تحت الكلمة المخفية)</label>
-      <div class="row">
-        <label class="chip"><input type="checkbox" name="reminders" ${s.reminders ? 'checked' : ''}>ذكّرني يومياً</label>
-        <label>الساعة <input type="time" name="reminderTime" value="${s.reminderTime}"></label>
-        <button type="button" class="btn small" data-act="ics">📅 أضف تذكيراً يومياً للتقويم</button>
-      </div>
-      <p class="muted small">إشعارات المتصفح تعمل والبرنامج مفتوح أو مثبّت على الشاشة الرئيسية. للتذكير المضمون أضفه للتقويم في موبايلك.</p>
+      <fieldset class="card">
+        <legend>${icon('repeat')}المراجعة</legend>
+        <div class="field-row">
+          <label class="field"><span>المراجعة القريبة: ما حفظته في آخر</span>
+            <select name="nearDays">${options([3, 5, 7, 10, 14, 30], s.nearDays, (n) => `${ar(n)} أيام`)}</select></label>
+          <div class="field">
+            <span id="far-label">المراجعة البعيدة يومياً</span>
+            <div class="combo" role="group" aria-labelledby="far-label">
+              <input type="number" name="farAmount" min="0.5" step="0.5" inputmode="decimal" value="${s.farAmount}" aria-label="المقدار">
+              <select name="farUnit" aria-label="الوحدة">${unitOpts(s.farUnit)}</select>
+            </div>
+          </div>
+        </div>
+        <details class="disclosure" ${welcome ? 'open' : ''}>
+          <summary>سور حفظتها من قبل <span class="badge soft" id="prior-count">${ar(prior.size)}</span></summary>
+          <p class="muted small">تدخل في المراجعة البعيدة ولا تظهر في الحفظ الجديد.</p>
+          <div class="row">
+            <button type="button" class="btn" data-act="juz30">تحديد جزء عمّ</button>
+            <button type="button" class="btn ghost" data-act="clearprior">إلغاء الكل</button>
+          </div>
+          <div class="surah-grid chips">
+            ${Array.from({ length: 114 }, (_, k) => k + 1).map((n) => `<label class="chip"><input type="checkbox" name="prior" value="${n}" ${prior.has(n) ? 'checked' : ''}><span>${surahName(n)}</span></label>`).join('')}
+          </div>
+        </details>
+      </fieldset>
 
-      <div class="card" id="proj" style="background:var(--surface-2);box-shadow:none"></div>
-      <button class="btn primary big" type="submit">${welcome ? 'ابدأ الخطة' : 'حفظ الخطة'}</button>
+      <fieldset class="card">
+        <legend>${icon('bell')}التسميع والتذكير</legend>
+        <div class="field-row">
+          <label class="field"><span>لهجة التعرف على الصوت</span><select name="lang">
+            ${[['ar-SA', 'العربية (السعودية)'], ['ar-EG', 'العربية (مصر)'], ['ar-AE', 'العربية (الإمارات)'], ['ar-JO', 'العربية (الأردن)'], ['ar-MA', 'العربية (المغرب)']].map(([v, l]) => `<option value="${v}" ${v === s.lang ? 'selected' : ''}>${l}</option>`).join('')}
+          </select></label>
+          <label class="field"><span>القارئ (للاستماع)</span><select name="reciter">
+            ${Object.entries(RECITERS).map(([v, l]) => `<option value="${v}" ${v === s.reciter ? 'selected' : ''}>${l}</option>`).join('')}
+          </select></label>
+        </div>
+        <label class="switch"><input type="checkbox" name="warnWeak" ${s.warnWeak ? 'checked' : ''}><span class="track" aria-hidden="true"></span>
+          <span>نبّهني على مواضع أخطائي السابقة وقت التسميع<small class="muted">خط برتقالي تحت الكلمة المخفية</small></span></label>
+        <label class="switch"><input type="checkbox" name="reminders" ${s.reminders ? 'checked' : ''}><span class="track" aria-hidden="true"></span>
+          <span>ذكّرني يومياً<small class="muted">إشعار والبرنامج مفتوح أو مثبّت على الشاشة الرئيسية</small></span></label>
+        <div class="field-row">
+          <label class="field"><span>وقت التذكير</span><input type="time" name="reminderTime" value="${s.reminderTime}"></label>
+          <div class="field"><span aria-hidden="true">&nbsp;</span><button type="button" class="btn" data-act="ics">${icon('calendarPlus')}أضف التذكير للتقويم</button></div>
+        </div>
+        <p class="muted small">للتذكير المضمون حتى والبرنامج مغلق، أضفه لتقويم موبايلك.</p>
+      </fieldset>
+
+      <div class="card projection" id="proj" role="status" aria-live="polite"></div>
+      <div class="form-submit"><button class="btn primary big block" type="submit">${icon('check')}${welcome ? 'ابدأ الخطة' : 'حفظ الخطة'}</button></div>
     </form>
 
-    ${welcome ? '' : `<div class="card">
+    ${welcome ? '' : `<section class="card">
       <h2>نسخة احتياطية</h2>
       <p class="muted small">بياناتك محفوظة على هذا الجهاز فقط. صدّرها لنقلها لجهاز آخر.</p>
-      <div class="row">
-        <button class="btn" data-act="export">⬇ تصدير</button>
-        <label class="btn">⬆ استيراد<input type="file" id="imp" accept="application/json" hidden></label>
-        <span class="spacer"></span>
-        <button class="btn danger ghost" data-act="reset">مسح كل البيانات</button>
+      <div class="row actions">
+        <button type="button" class="btn" data-act="export">${icon('download')}تصدير</button>
+        <label class="btn file-btn">${icon('upload')}استيراد<input type="file" id="imp" accept="application/json"></label>
       </div>
-    </div>`}
+      <div class="danger-zone">
+        <button type="button" class="btn ghost danger" data-act="reset">${icon('trash', { size: 18 })}مسح كل البيانات</button>
+      </div>
+    </section>`}
   `;
 
   const form = document.getElementById('pf');
@@ -688,19 +773,33 @@ function renderPlan({ welcome = false } = {}) {
   const showProj = () => {
     const p = projection(read());
     document.getElementById('proj').innerHTML = p.ayahs
-      ? `📆 بهذه الخطة: متبقٍّ <b>${ar(p.ayahs)}</b> آية في اتجاه الحفظ، تحتاج حوالي <b>${ar(p.studyDays)}</b> يوم حفظ
-         ≈ <b>${ar(Math.round(p.calendarDays / 30))}</b> شهر، وتنتهي تقريباً <b>${formatDay(p.end)} ${ar(p.end.slice(0, 4))}</b>
-         عند سورة ${surahName(p.last.s)}.
-         <div class="muted small">لختم القرآن كاملاً اجعل البداية من الناس نزولاً أو من الفاتحة صعوداً.</div>`
-      : '✅ كل الآيات في اتجاه هذه الخطة محفوظة.';
+      ? `<div class="proj-head">${icon('today')}<b>تقدير موعد الإتمام</b></div>
+         <div class="proj-stats">
+           <div><b>${ar(p.ayahs)}</b><span>آية متبقية</span></div>
+           <div><b>${ar(p.studyDays)}</b><span>يوم حفظ</span></div>
+           <div><b>${ar(Math.max(1, Math.round(p.calendarDays / 30)))}</b><span>شهر تقريباً</span></div>
+         </div>
+         <p class="small">تنتهي تقريباً <b>${formatDay(p.end)} ${ar(p.end.slice(0, 4))}</b> عند سورة ${surahName(p.last.s)}.</p>
+         <p class="muted small">لختم القرآن كاملاً اجعل البداية من الناس نزولاً أو من الفاتحة صعوداً.</p>`
+      : `<div class="proj-head">${icon('checkCircle')}<b>كل الآيات في اتجاه هذه الخطة محفوظة</b></div>`;
+    document.getElementById('prior-count').textContent = ar(form.querySelectorAll('input[name=prior]:checked').length);
   };
-  form.oninput = showProj;
+  form.oninput = () => {
+    showProj();
+    if (form.querySelector('input[name=day]:checked')) document.getElementById('days-error').hidden = true;
+  };
   showProj();
 
   form.onsubmit = async (e) => {
     e.preventDefault();
     const next = read();
-    if (!next.studyDays.length) { toast('اختر يوماً واحداً على الأقل للحفظ'); return; }
+    if (!next.studyDays.length) {
+      const err = document.getElementById('days-error');
+      err.hidden = false;
+      form.querySelector('input[name=day]').focus();
+      err.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+      return;
+    }
     const today = dayKey();
     update((x) => {
       x.settings = next;
@@ -709,7 +808,7 @@ function renderPlan({ welcome = false } = {}) {
       if (x.days[today] && !x.days[today].tasks.new.done) delete x.days[today];
     });
     if (next.reminders) await enableNotifications();
-    toast('تم حفظ الخطة ✓');
+    toast('تم حفظ الخطة');
     go('home');
   };
 
@@ -735,7 +834,7 @@ function renderPlan({ welcome = false } = {}) {
   };
   const imp = document.getElementById('imp');
   if (imp) imp.onchange = async () => {
-    try { importData(await imp.files[0].text()); toast('تم الاستيراد ✓'); go('home'); } catch (err) { toast(`فشل الاستيراد: ${err.message}`); }
+    try { importData(await imp.files[0].text()); toast('تم الاستيراد'); go('home'); } catch (err) { toast(`فشل الاستيراد: ${err.message}`); }
   };
 }
 
@@ -768,7 +867,7 @@ function checkReminder() {
   if (!pending.length) return;
   const weak = plan.tasks.find((t) => t.id === 'weak').count;
   update((x) => { x.lastReminder = today; });
-  notify('ورد اليوم في انتظارك 📖', `${pending.map((t) => t.title).join(' · ')}${weak ? `\nعندك ${weak} كلمة من نقاط ضعفك تحتاج مراجعة` : ''}`);
+  notify('ورد اليوم في انتظارك', `${pending.map((t) => t.title).join(' · ')}${weak ? `\nعندك ${weak} كلمة من نقاط ضعفك تحتاج مراجعة` : ''}`);
 }
 
 function downloadIcs(time) {
@@ -779,7 +878,7 @@ function downloadIcs(time) {
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Rafiq Al-Hifz//AR', 'BEGIN:VEVENT',
     `UID:hifz-daily-${d}@rafiq`, `DTSTAMP:${d}T000000Z`,
     `DTSTART:${d}T${h}${m}00`, 'DURATION:PT30M',
-    'RRULE:FREQ=DAILY', 'SUMMARY:ورد حفظ القرآن 📖',
+    'RRULE:FREQ=DAILY', 'SUMMARY:ورد حفظ القرآن',
     `DESCRIPTION:افتح رفيق الحفظ وابدأ بنقاط الضعف ثم الحفظ الجديد والمراجعة\\n${url}`,
     'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:ورد حفظ القرآن', 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR',
@@ -801,7 +900,12 @@ async function boot() {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  go('home');
+  for (const el of document.querySelectorAll('[data-icon]')) el.outerHTML = icon(el.dataset.icon, { size: 22 });
+  // فتح البرنامج على رابط شاشة معينة (#weak مثلاً)
+  const initial = location.hash.slice(1);
+  const start = TAB_VIEWS.includes(initial) ? initial : 'home';
+  history.replaceState({ view: start }, '', `#${start}`);
+  go(start, {}, { push: false });
   checkReminder();
   setInterval(checkReminder, 60 * 1000);
   // لو بقي البرنامج مفتوحاً لليوم التالي نحدث الرئيسية
@@ -809,7 +913,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && dayKey() !== day) {
       day = dayKey();
-      if (!cleanup) go('home');
+      if (!cleanup) go('home', {}, { push: false });
     }
   });
 }
