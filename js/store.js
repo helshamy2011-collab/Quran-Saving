@@ -30,6 +30,7 @@ function fresh() {
     farCursor: 0,
     days: {},           // خطة كل يوم وحالة مهامها
     weak: {},           // 'g:w' → نقطة ضعف
+    readIssues: {},     // 'g:w' → كلمات صعبة حتى في القراءة بالنظر
     sessions: [],
     lastReminder: '',
   };

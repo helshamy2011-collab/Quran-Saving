@@ -3,21 +3,17 @@ import {
   describeAyahs, toArabicDigits, surahRangeLabel,
 } from './quran.js';
 import { getState, update, save, dayKey, formatDay, exportData, importData, resetAll, DEFAULT_SETTINGS } from './store.js';
-import { todayPlan, recordSession, stats, projection, dueWeak, weakAyahs, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
-import { Matcher, STATUS, isMistake } from './matcher.js';
-import { Listener, speechSupported } from './speech.js';
+import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, dueWeak, weakAyahs, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
+import { STATUS, isMistake } from './matcher.js';
+import { speechSupported } from './speech.js';
+import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
 import { icon } from './icons.js';
+import { renderGuided } from './guided.js';
 
 const app = document.getElementById('app');
 const tabs = document.getElementById('tabs');
 let cleanup = null;
 
-const STATUS_LABEL = {
-  [STATUS.WRONG]: 'خطأ',
-  [STATUS.SKIPPED]: 'أسقطها',
-  [STATUS.HINT]: 'نسيها',
-  [STATUS.CORRECTED]: 'تردد',
-};
 const WEEKDAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const RECITERS = {
   Husary_128kbps: 'الحصري (مرتل)',
@@ -55,7 +51,7 @@ function go(view, params = {}, { push = true } = {}) {
   document.body.classList.toggle('immersive', !tab);
   if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
-  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite };
+  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView };
   views[view](params);
   refreshBadge();
 }
@@ -107,8 +103,9 @@ function renderHome() {
     } else {
       range = `<p class="range">${esc(describeAyahs(t.ayahs))} <span class="muted small">· ${ar(t.ayahs.length)} آية</span></p>`;
       if (t.id === 'new' && !t.done) {
-        actions = `<button type="button" class="btn" data-act="study">${icon('headphones')}احفظ واستمع</button>
-                   <button type="button" class="btn primary" data-act="recite" data-task="new">${icon('mic')}سمّع</button>`;
+        actions = `<button type="button" class="btn primary" data-act="guided">${icon('sprout')}حفّظني خطوة بخطوة</button>
+                   <button type="button" class="btn" data-act="study">${icon('headphones')}استمع</button>
+                   <button type="button" class="btn" data-act="recite" data-task="new">${icon('mic')}سمّع</button>`;
       } else {
         actions = `<button type="button" class="btn ${t.done ? '' : 'primary'}" data-act="recite" data-task="${t.id}">${icon(t.done ? 'repeat' : 'mic')}${t.done ? 'سمّع مرة أخرى' : 'سمّع'}</button>`;
       }
@@ -151,6 +148,7 @@ function renderHome() {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'study') go('study');
+    if (b.dataset.act === 'guided') go('guided');
     if (b.dataset.act === 'recite') {
       const t = plan.tasks.find((x) => x.id === b.dataset.task);
       go('recite', { taskId: t.id, label: t.title, ayahs: t.ayahs });
@@ -212,6 +210,7 @@ function renderStudy() {
     <div class="mushaf study">${html}</div>
     <div class="dock"><div class="inner">
       <p class="heard">لما تحس إنك حفظت، ابدأ التسميع والنص هيكون مخفي.</p>
+      <button type="button" class="btn big" data-act="guided">${icon('sprout')}حفّظني</button>
       <button type="button" class="btn primary big" data-act="recite">${icon('mic')}جاهز — سمّع</button>
     </div></div>
   `;
@@ -259,37 +258,31 @@ function renderStudy() {
     if (act === 'play-all') playQueue(t.ayahs);
     if (act === 'stop') stopAudio();
     if (act === 'recite') go('recite', { taskId: 'new', label: 'الحفظ الجديد', ayahs: t.ayahs });
+    if (act === 'guided') go('guided');
   };
   cleanup = stopAudio;
 }
 
+// ================= حفّظني =================
+// بدون معاملات: ورد اليوم الجديد
+function renderGuidedView({ ayahs, label, returnTo = 'home' } = {}) {
+  const isNew = !ayahs;
+  if (isNew) ayahs = todayPlan().tasks.find((x) => x.id === 'new').ayahs;
+  if (!ayahs.length) { go('home', {}, { push: false }); return; }
+  renderGuided({
+    app, toast,
+    back: () => back(returnTo),
+    setCleanup: (fn) => { cleanup = fn; },
+    onFinal: () => go('recite', isNew
+      ? { taskId: 'new', label: 'الحفظ الجديد', ayahs }
+      : { taskId: 'free', label: label || 'تسميع حر', ayahs, returnTo }),
+  }, { ayahs, label: label || 'حفّظني' });
+}
+
 // ================= شاشة التسميع =================
-function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
+// reading = true: القراءة والمصحف مفتوح (للمقارنة) — لا تُحسب أخطاؤها أخطاء حفظ
+function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false }) {
   const st = getState();
-  const weak = st.weak;
-  const words = [];
-  for (const g of ayahs) ayahWords(g).forEach((w, i) => words.push({ ...w, g, w: i }));
-  const matcher = new Matcher(words);
-  const manual = !speechSupported;
-
-  // بناء النص المخفي
-  let html = '';
-  let prev = null;
-  let idx = 0;
-  for (const g of ayahs) {
-    const { s, a } = fromGlobal(g);
-    if (!prev || prev.s !== s || prev.a !== a - 1) {
-      html += `<span class="surah-head">${a === 1 ? `سورة ${surahName(s)}` : `${surahName(s)} — من الآية ${ar(a)}`}</span>`;
-    }
-    prev = { s, a };
-    const n = ayahWords(g).length;
-    for (let i = 0; i < n; i++, idx++) {
-      const wk = st.settings.warnWeak && weak[`${g}:${i}`] && !weak[`${g}:${i}`].mastered;
-      html += `<span class="w hidden ${wk ? 'weak-mark' : ''}" data-i="${idx}" aria-hidden="true">${words[idx].text}</span> `;
-    }
-    html += `<span class="ayah-end">﴿${ar(a)}﴾</span> `;
-  }
-
   app.innerHTML = `
     <div class="sub-head">
       <button type="button" class="icon-btn" data-act="back" aria-label="رجوع">${icon('back', { size: 22 })}</button>
@@ -297,163 +290,85 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
       <span id="score" class="tag ok"></span>
     </div>
     <div class="progress" id="bar-wrap" role="progressbar" aria-label="نسبة ما سمّعته" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="bar" style="width:0"></i></div>
-    ${manual ? `<div class="alert" role="note">${icon('info')}<div>متصفحك لا يدعم التعرف على الصوت. استخدم Chrome أو Edge أو Safari للتسميع بالصوت.
+    ${!speechSupported ? `<div class="alert" role="note">${icon('info')}<div>متصفحك لا يدعم التعرف على الصوت. استخدم Chrome أو Edge أو Safari للتسميع بالصوت.
       الآن تقدر تسمّع بنفسك: اضغط <b>«قلتها صح»</b> لكشف الكلمة، أو <b>«نسيتها»</b> لو نسيت.</div></div>` : ''}
-    <ul class="legend" aria-label="دليل الألوان">
+    ${reading ? `<div class="alert info" role="note">${icon('book')}<div><b>قراءة بالنظر:</b> اقرأ والمصحف مفتوح. الكلمات اللي تتعثر فيها هنا
+      غالباً مشكلة نطق أو البرنامج مش بيفهمها — مش هتتحسب عليك أخطاء حفظ وقت التسميع.</div></div>` : `<ul class="legend" aria-label="دليل الألوان">
       <li><i class="sw hidden"></i>مخفية</li>
       <li><i class="sw wrong"></i>خطأ / أسقطها</li>
       <li><i class="sw hint"></i>نسيتها</li>
       <li><i class="sw corrected"></i>تردد</li>
       ${st.settings.warnWeak ? '<li><i class="sw weak"></i>أخطأت فيها سابقاً — ركّز</li>' : ''}
-    </ul>
-    <div class="mushaf" id="mushaf" aria-label="نص الآيات — يظهر مع التسميع">${html}</div>
+    </ul>`}
+    <div class="mushaf" id="mushaf" aria-label="نص الآيات">${''}</div>
     <p class="muted small helper">${icon('info', { size: 16 })}لو البرنامج فهمك غلط، اضغط على الكلمة الملونة لتصحيحها (والعكس).</p>
     <div id="result" tabindex="-1"></div>
-    <div class="dock" id="dock"><div class="inner">
-      ${manual
-        ? `<button type="button" class="btn primary big" data-act="ok">${icon('check')}قلتها صح</button>`
-        : `<button type="button" class="mic" id="mic" data-act="mic" aria-label="ابدأ الاستماع" aria-pressed="false">${icon('mic', { size: 28 })}</button>`}
-      <p class="heard" id="heard">${manual ? 'مسافة = صح · H = نسيتها · Z = تراجع' : 'اضغط على الميكروفون وابدأ القراءة…'}</p>
-      <div class="dock-actions">
-        <button type="button" class="btn" data-act="hint" id="hint-btn">${icon('bulb', { size: 18 })}نسيتها</button>
-        <button type="button" class="btn icon-only" data-act="undo" aria-label="تراجع عن آخر كلمة">${icon('undo', { size: 18 })}</button>
-        <button type="button" class="btn icon-only" data-act="finish" aria-label="إنهاء التسميع">${icon('flag', { size: 18 })}</button>
-      </div>
-    </div></div>
+    <div class="dock" id="dock"></div>
   `;
 
-  const spans = [...app.querySelectorAll('#mushaf .w')];
-  const heardEl = document.getElementById('heard');
-  const micBtn = document.getElementById('mic');
-  const hintBtn = document.getElementById('hint-btn');
-  let prevStatus = matcher.status.slice();
-  let lastProgress = Date.now();
+  const rec = new Recitation({
+    mushafEl: document.getElementById('mushaf'),
+    dockEl: document.getElementById('dock'),
+    lang: st.settings.lang,
+    weak: st.weak,
+    warnWeak: st.settings.warnWeak && !reading,
+    onError: (msg) => toast(msg, 5000),
+    onUpdate: (sc) => {
+      const pct = Math.round((sc.done / sc.total) * 100);
+      document.getElementById('bar').style.width = `${pct}%`;
+      document.getElementById('bar-wrap').setAttribute('aria-valuenow', pct);
+      const scoreEl = document.getElementById('score');
+      scoreEl.textContent = sc.done ? `${ar(sc.accuracy)}٪ · ${ar(sc.mistakes)} خطأ` : '';
+      scoreEl.className = `tag ${sc.accuracy >= 90 ? 'ok' : sc.accuracy >= 70 ? 'corrected' : 'wrong'}`;
+    },
+    onComplete: () => finish(),
+    onFinishRequest: () => {
+      if (rec.matcher.pos === 0 || confirm('إنهاء التسميع الآن؟ سيتم حفظ ما سمّعته حتى الآن.')) finish();
+    },
+  });
+  rec.load({ ayahs, visible: () => reading, reading });
+  const words = rec.words;
   let finished = false;
 
-  const paint = () => {
-    matcher.status.forEach((stt, i) => {
-      if (stt === prevStatus[i] && !(i === matcher.pos || i === matcher.pos - 1)) return;
-      const el = spans[i];
-      const weakMark = el.classList.contains('weak-mark');
-      el.className = `w ${stt}${weakMark ? ' weak-mark' : ''}`;
-      if (stt !== STATUS.HIDDEN) el.classList.add('revealed');
-      el.toggleAttribute('aria-hidden', stt === STATUS.HIDDEN);
-      if (STATUS_LABEL[stt]) el.title = `${STATUS_LABEL[stt]} — اضغط للتصحيح`; else el.removeAttribute('title');
-      if (stt !== prevStatus[i] && stt !== STATUS.HIDDEN) el.classList.add('just');
-    });
-    if (!matcher.done) {
-      spans[matcher.pos].classList.add('current');
-      const r = spans[matcher.pos].getBoundingClientRect();
-      if (r.bottom > window.innerHeight - 140 || r.top < 120) spans[matcher.pos].scrollIntoView({ block: 'center', behavior: scrollBehavior() });
-    }
-    if (matcher.status.some((x, i) => x !== prevStatus[i])) lastProgress = Date.now();
-    prevStatus = matcher.status.slice();
-    const sc = matcher.score();
-    const pct = Math.round((sc.done / sc.total) * 100);
-    document.getElementById('bar').style.width = `${pct}%`;
-    document.getElementById('bar-wrap').setAttribute('aria-valuenow', pct);
-    const scoreEl = document.getElementById('score');
-    scoreEl.textContent = sc.done ? `${ar(sc.accuracy)}٪ · ${ar(sc.mistakes)} خطأ` : '';
-    scoreEl.className = `tag ${sc.accuracy >= 90 ? 'ok' : sc.accuracy >= 70 ? 'corrected' : 'wrong'}`;
-    hintBtn.classList.remove('nudge');
-    if (matcher.done && !finished) finish();
-  };
-
-  // ---- الاستماع ----
-  const consumed = new Map();
-  const listener = manual ? null : new Listener({
-    lang: st.settings.lang,
-    onWords(tokens, isFinal, key, alts) {
-      if (finished) return;
-      heardEl.textContent = `سمعت: ${tokens.join(' ')}`;
-      const used = consumed.get(key) || 0;
-      if (!isFinal) {
-        const n = matcher.feedInterim(tokens.slice(used));
-        if (n) { consumed.set(key, used + n); paint(); }
-        return;
-      }
-      // نختار من بدائل التعرف الأقرب للنص
-      let best = alts[0];
-      let bestScore = -Infinity;
-      for (const alt of alts) {
-        const c = matcher.clone();
-        c.feedFinal(alt.slice(used));
-        let sc = 0;
-        c.status.forEach((x, i) => {
-          if (x === matcher.status[i]) return;
-          sc += isMistake(x) ? -2 : 1;
-        });
-        if (sc > bestScore) { bestScore = sc; best = alt; }
-      }
-      matcher.snapshot();
-      matcher.feedFinal(best.slice(used));
-      consumed.delete(key);
-      paint();
-    },
-    onState(state) {
-      if (!micBtn) return;
-      micBtn.classList.toggle('on', listener.active);
-      micBtn.setAttribute('aria-pressed', String(listener.active));
-      micBtn.setAttribute('aria-label', listener.active ? 'أوقف الاستماع' : 'ابدأ الاستماع');
-      micBtn.innerHTML = icon(listener.active ? 'pause' : 'mic', { size: 28 });
-    },
-    onError(msg) { toast(msg, 5000); heardEl.textContent = msg; micBtn?.classList.remove('on'); },
-  });
-
-  // تنبيه لو توقف طويلاً: "نسيت؟"
-  const stallTimer = setInterval(() => {
-    if (!finished && listener?.active && Date.now() - lastProgress > 7000) {
-      hintBtn.classList.add('nudge');
-      heardEl.textContent = 'توقفت؟ لو نسيت الكلمة اضغط «نسيتها» وسأكشفها لك وأسجلها للمراجعة.';
-    }
-  }, 1000);
-
-  const doHint = () => { matcher.snapshot(); matcher.hint(); paint(); };
-  const doOk = () => { matcher.snapshot(); matcher.revealOk(); paint(); };
-  const doUndo = () => {
-    if (!matcher.undo()) return;
-    prevStatus = prevStatus.map(() => null);
-    paint();
-  };
-
   function finish() {
+    if (finished) return;
     finished = true;
-    listener?.stop();
-    clearInterval(stallTimer);
-    const sc = matcher.score();
+    rec.destroy();
+    const sc = rec.score;
     if (!sc.done) { back(returnTo); return; }
-    recordSession({ taskId, label, words, status: matcher.status, score: sc });
+    const status = rec.status.slice();
+    // نحسب الكلمات الصعبة في القراءة قبل التسجيل حتى لا تتأثر بنتيجة هذه الجلسة
+    const readIssue = status.map((x, i) => isMistake(x) && isReadIssue(words[i].g, words[i].w));
+    recordSession({ taskId, label, words, status, score: sc, reading });
     refreshBadge();
-    const mistakes = matcher.status.map((x, i) => ({ x, i })).filter((o) => isMistake(o.x));
+    const mistakes = status.map((x, i) => ({ x, i })).filter((o) => isMistake(o.x));
     const passMark = getState().settings.passMark;
-    const complete = sc.done === sc.total;
     let verdict = '';
-    if (taskId === 'new') {
-      verdict = complete && sc.accuracy >= passMark
+    if (taskId === 'new' && !reading) {
+      verdict = sc.done === sc.total && sc.accuracy >= passMark
         ? `<p class="verdict ok">${icon('checkCircle')}<span>تم اعتماد الحفظ الجديد. ستظهر هذه الآيات في المراجعة القريبة الأيام القادمة.</span></p>`
         : `<p class="verdict warn">${icon('alert')}<span>تحتاج ${ar(passMark)}٪ على الأقل مع إكمال الورد لاعتماد الحفظ. راجع المواضع الملونة وأعد التسميع.</span></p>`;
     }
+    const memoryCount = mistakes.filter(({ i }) => !readIssue[i]).length;
     document.getElementById('dock').hidden = true;
     const res = document.getElementById('result');
     res.innerHTML = `<section class="card result" aria-labelledby="result-title">
       <div class="result-top">
         <div class="result-score ${sc.accuracy < 80 ? 'low' : ''}">${ar(sc.accuracy)}٪</div>
-        <div><h2 id="result-title">${sc.accuracy >= 95 ? 'ممتاز، بارك الله فيك' : sc.accuracy >= 80 ? 'جيد، ثبّت المواضع الملونة' : 'تحتاج تثبيتاً أكثر'}</h2>
+        <div><h2 id="result-title">${reading ? 'نتيجة القراءة بالنظر' : sc.accuracy >= 95 ? 'ممتاز، بارك الله فيك' : sc.accuracy >= 80 ? 'جيد، ثبّت المواضع الملونة' : 'تحتاج تثبيتاً أكثر'}</h2>
         <p class="muted small">${ar(sc.done)} من ${ar(sc.total)} كلمة · ${ar(sc.mistakes)} خطأ</p></div>
       </div>
       ${verdict}
-      ${mistakes.length ? `<h3>حفظتُ لك هذه المواضع للمراجعة</h3><ul class="mistake-list">
-        ${mistakes.map(({ x, i }) => {
-          const w = words[i];
-          const { s, a } = fromGlobal(w.g);
-          const all = ayahWords(w.g);
-          const ctx = all.slice(Math.max(0, w.w - 2), w.w + 3).map((y, k) => (Math.max(0, w.w - 2) + k === w.w ? `<mark>${y.text}</mark>` : y.text)).join(' ');
-          return `<li><span class="tag ${x}">${STATUS_LABEL[x]}</span><span class="q">${ctx}</span><span class="muted small">${surahName(s)} ${ar(a)}</span></li>`;
-        }).join('')}
-      </ul><p class="muted small">ستظهر لك في «نقاط الضعف» غداً، ثم بعد يومين، ثم ٤، ثم أسبوع… حتى تثبت تماماً.</p>` : '<p class="verdict ok">' + icon('award') + '<span>لا أخطاء، ما شاء الله!</span></p>'}
+      ${mistakes.length ? `<h3>${reading ? 'كلمات تعثرت فيها وانت بتقرأ' : memoryCount ? 'حفظتُ لك هذه المواضع للمراجعة' : 'المواضع الملونة'}</h3>
+      <ul class="mistake-list">${mistakes.map(({ x, i }) => mistakeItem(words[i], x, readIssue[i] && !reading)).join('')}</ul>
+      <p class="muted small">${reading
+        ? 'دي غالباً مشكلة نطق أو البرنامج مش بيفهمها. اسمعها من القارئ وصحّح نطقها، ووقت التسميع لو "غلط" فيها مش هتتحسب خطأ حفظ.'
+        : 'ستظهر لك في «نقاط الضعف» غداً، ثم بعد يومين، ثم ٤، ثم أسبوع… حتى تثبت تماماً.'}</p>`
+      : `<p class="verdict ok">${icon('award')}<span>لا أخطاء، ما شاء الله!</span></p>`}
       <div class="row actions">
-        <button type="button" class="btn primary" data-act="again">${icon('repeat')}سمّع مرة أخرى</button>
-        ${mistakes.length ? `<button type="button" class="btn" data-act="again-weak">${icon('target')}آيات الأخطاء فقط</button>` : ''}
+        <button type="button" class="btn primary" data-act="again">${icon('repeat')}${reading ? 'اقرأ مرة أخرى' : 'سمّع مرة أخرى'}</button>
+        ${reading ? `<button type="button" class="btn" data-act="to-memory">${icon('mic')}سمّعها من حفظك</button>` : ''}
+        ${mistakes.length && !reading ? `<button type="button" class="btn" data-act="again-weak">${icon('target')}آيات الأخطاء فقط</button>` : ''}
         <button type="button" class="btn ghost" data-act="back">رجوع</button>
       </div>
     </section>`;
@@ -463,7 +378,8 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
     res.onclick = (e) => {
       const b = e.target.closest('[data-act]');
       if (!b) return;
-      if (b.dataset.act === 'again') go('recite', { taskId, label, ayahs, returnTo });
+      if (b.dataset.act === 'again') go('recite', { taskId, label, ayahs, returnTo, reading });
+      if (b.dataset.act === 'to-memory') go('recite', { taskId: 'free', label: 'تسميع حر', ayahs, returnTo });
       if (b.dataset.act === 'again-weak') {
         const list = [...new Set(mistakes.map(({ i }) => words[i].g))];
         go('recite', { taskId: 'weak', label: 'آيات الأخطاء', ayahs: list, returnTo });
@@ -473,39 +389,20 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home' }) {
   }
 
   app.onclick = (e) => {
-    const w = e.target.closest('#mushaf .w');
-    if (w && !finished) {
-      const i = Number(w.dataset.i);
-      if (i < matcher.pos) { matcher.snapshot(); matcher.toggle(i); prevStatus[i] = null; paint(); }
-      return;
-    }
     const b = e.target.closest('[data-act]');
-    if (!b || b.closest('#result')) return;
-    const act = b.dataset.act;
-    if (act === 'back') back(returnTo);
-    if (act === 'mic') { if (listener.active) listener.stop(); else { listener.start(); lastProgress = Date.now(); } }
-    if (act === 'hint') doHint();
-    if (act === 'ok') doOk();
-    if (act === 'undo') doUndo();
-    if (act === 'finish') {
-      if (matcher.pos === 0 || confirm('إنهاء التسميع الآن؟ سيتم حفظ ما سمّعته حتى الآن.')) finish();
-    }
+    if (b && !b.closest('#result') && b.dataset.act === 'back') back(returnTo);
   };
+  cleanup = () => { finished = true; rec.destroy(); };
+}
 
-  const onKey = (e) => {
-    if (finished || e.target.matches('input, select')) return;
-    if (e.code === 'Space') { e.preventDefault(); if (manual) doOk(); else micBtn.click(); }
-    if (e.key === 'h' || e.key === 'H' || e.key === 'ا') doHint();
-    if (e.key === 'z' || e.key === 'Z' || e.key === 'ئ') doUndo();
-  };
-  document.addEventListener('keydown', onKey);
-  cleanup = () => {
-    finished = true;
-    listener?.stop();
-    clearInterval(stallTimer);
-    document.removeEventListener('keydown', onKey);
-  };
-  paint();
+// سطر في قائمة الأخطاء: الكلمة في سياقها
+function mistakeItem(w, x, readIssue = false) {
+  const { s, a } = fromGlobal(w.g);
+  const all = ayahWords(w.g);
+  const from = Math.max(0, w.w - 2);
+  const ctx = all.slice(from, w.w + 3).map((y, k) => (from + k === w.w ? `<mark>${y.text}</mark>` : y.text)).join(' ');
+  return `<li><span class="tag ${x}">${STATUS_LABEL[x]}</span><span class="q">${ctx}</span><span class="muted small">${surahName(s)} ${ar(a)}</span>
+    ${readIssue ? '<span class="tag soft" title="البرنامج بيغلط فيها حتى وانت بتقرأ بالنظر">صعبة في القراءة كمان — مش محسوبة خطأ حفظ</span>' : ''}</li>`;
 }
 
 // ================= نقاط الضعف =================
@@ -607,8 +504,17 @@ function renderFree() {
         <label class="field"><span>إلى الآية</span><input type="number" id="ft" min="1" inputmode="numeric" value="${last.to}"></label>
       </div>
       <p class="muted small" id="fhelp"></p>
+      <fieldset class="field">
+        <legend>الطريقة</legend>
+        <div class="segmented">
+          <label><input type="radio" name="mode" value="memory" ${last.mode !== 'reading' && last.mode !== 'guided' ? 'checked' : ''}><span>${icon('mic', { size: 16 })}من حفظي</span></label>
+          <label><input type="radio" name="mode" value="reading" ${last.mode === 'reading' ? 'checked' : ''}><span>${icon('book', { size: 16 })}بالنظر</span></label>
+          <label><input type="radio" name="mode" value="guided" ${last.mode === 'guided' ? 'checked' : ''}><span>${icon('sprout', { size: 16 })}حفّظني</span></label>
+        </div>
+        <p class="muted small" id="mode-help"></p>
+      </fieldset>
       <div class="row actions">
-        <button type="submit" class="btn primary big">${icon('mic')}ابدأ التسميع</button>
+        <button type="submit" class="btn primary big">${icon('mic')}ابدأ</button>
         <button type="button" class="btn" id="fall">السورة كاملة</button>
       </div>
     </form>`;
@@ -624,6 +530,15 @@ function renderFree() {
   };
   ff.onchange = clamp;
   ft.onchange = clamp;
+  const MODE_HELP = {
+    memory: 'النص مخفي ويظهر مع قراءتك. الأخطاء تتسجل في نقاط الضعف.',
+    reading: 'المصحف مفتوح وانت بتقرأ. بيعرف الكلمات الصعبة في النطق عشان ما تتحسبش عليك أخطاء حفظ بعد كده.',
+    guided: 'آية آية: استمع ← اقرأ بالنظر ← إخفاء تدريجي ← من حفظك ← اربط، ثم مقارنة بين قراءتك وحفظك.',
+  };
+  const form = document.getElementById('free-form');
+  const showMode = () => { document.getElementById('mode-help').textContent = MODE_HELP[form.mode.value]; };
+  form.onchange = showMode;
+  showMode();
   fs.onchange = () => { ff.value = 1; ft.value = ayahCount(Number(fs.value)); clamp(); };
   document.getElementById('fall').onclick = () => { ff.value = 1; ft.value = ayahCount(Number(fs.value)); };
   clamp();
@@ -633,10 +548,12 @@ function renderFree() {
     let from = Math.max(1, Number(ff.value) || 1);
     let to = Math.min(ayahCount(s), Number(ft.value) || from);
     if (to < from) [from, to] = [to, from];
-    localStorage.setItem('free-last', JSON.stringify({ s, from, to }));
+    const mode = form.mode.value;
+    localStorage.setItem('free-last', JSON.stringify({ s, from, to, mode }));
     const ayahs = [];
     for (let a = from; a <= to; a++) ayahs.push(toGlobal(s, a));
-    go('recite', { taskId: 'free', label: 'تسميع حر', ayahs, returnTo: 'free' });
+    if (mode === 'guided') go('guided', { ayahs, label: `حفّظني — ${surahName(s)}`, returnTo: 'free' });
+    else go('recite', { taskId: 'free', label: mode === 'reading' ? 'قراءة بالنظر' : 'تسميع حر', ayahs, returnTo: 'free', reading: mode === 'reading' });
   };
   app.onclick = null;
 }

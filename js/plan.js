@@ -125,16 +125,16 @@ export function todayPlan() {
 
 // ---------- تسجيل نتيجة جلسة تسميع ----------
 // words: [{g, w}] — status: حالة كل كلمة من المحرك
-export function recordSession({ taskId, label, words, status, score }) {
-  const today = dayKey();
-  update((s) => {
-    // تحديث نقاط الضعف
-    words.forEach((word, i) => {
+// تحديث نقاط الضعف من نتيجة تسميع من الحفظ
+function applyWeak(s, words, status, today) {
+  words.forEach((word, i) => {
       const st = status[i];
       if (st === STATUS.HIDDEN) return;
       const key = `${word.g}:${word.w}`;
       const item = s.weak[key];
       if (isMistake(st)) {
+        // كلمة يخطئ فيها التعرف حتى وهو يقرأ بالنظر: "خطأ/تردد" هنا غالباً سوء فهم لا نسيان
+        if ((st === STATUS.WRONG || st === STATUS.CORRECTED) && isReadIssue(word.g, word.w, s)) return;
         const it = item || { g: word.g, w: word.w, misses: 0, hits: 0, history: [] };
         it.misses++;
         it.box = 0;
@@ -152,10 +152,53 @@ export function recordSession({ taskId, label, words, status, score }) {
         if (item.box >= WEAK_INTERVALS.length) item.mastered = true;
         else item.due = addDays(today, WEAK_INTERVALS[item.box]);
       }
-    });
+  });
+}
+
+// القراءة والمصحف مفتوح: تحدد الكلمات الصعبة في النطق (أو التي لا يفهمها التعرف الصوتي)
+// وليست أخطاء حفظ، فلا تدخل نقاط الضعف
+function applyReading(s, words, status, today) {
+  s.readIssues ||= {};
+  words.forEach((word, i) => {
+    const st = status[i];
+    if (st === STATUS.HIDDEN) return;
+    const key = `${word.g}:${word.w}`;
+    const item = s.readIssues[key];
+    if (isMistake(st)) s.readIssues[key] = { n: (item?.n || 0) + 1, ok: item?.ok || 0, last: today };
+    else if (item) { item.ok = (item.ok || 0) + 1; if (item.ok >= 3 && item.ok > item.n) delete s.readIssues[key]; }
+  });
+}
+
+// هل هذه الكلمة صعبة حتى في القراءة بالنظر؟
+export function isReadIssue(g, w, state = getState()) {
+  const it = state.readIssues?.[`${g}:${w}`];
+  return !!it && it.n > (it.ok || 0) / 2;
+}
+
+// تسجيل جلسة تدريب (وضع حفّظني أو قراءة بالنظر) بدون إنجاز مهام اليوم
+// memory: [{words, status}] نتائج من الحفظ — reading: [{words, status}] نتائج بالنظر
+export function recordPractice({ label, memory = [], reading = [], score }) {
+  const today = dayKey();
+  update((s) => {
+    for (const r of reading) applyReading(s, r.words, r.status, today);
+    for (const r of memory) applyWeak(s, r.words, r.status, today);
+    if (score) {
+      s.sessions.unshift({ date: today, time: Date.now(), taskId: 'practice', label, ...score });
+      s.sessions = s.sessions.slice(0, 300);
+    }
+  });
+}
+
+export function recordSession({ taskId, label, words, status, score, reading = false }) {
+  const today = dayKey();
+  update((s) => {
+    if (reading) applyReading(s, words, status, today);
+    else applyWeak(s, words, status, today);
 
     const day = s.days[today];
-    if (taskId === 'new' && day) {
+    if (reading) {
+      // قراءة النظر لا تُنجز مهام اليوم
+    } else if (taskId === 'new' && day) {
       if (score.accuracy >= s.settings.passMark && score.done === score.total) {
         day.tasks.new.done = true;
         day.tasks.new.accuracy = score.accuracy;
