@@ -2,7 +2,10 @@ import {
   loadQuran, surahName, ayahCount, toGlobal, fromGlobal, ayahWords, ayahText,
   describeAyahs, toArabicDigits, surahRangeLabel,
 } from './quran.js';
-import { getState, update, save, dayKey, formatDay, exportData, importData, resetAll, DEFAULT_SETTINGS } from './store.js';
+import {
+  getState, update, save, dayKey, formatDay, exportData, importData, resetAll, DEFAULT_SETTINGS,
+  getProfiles, activeProfile, switchProfile, addProfile, renameProfile, deleteProfile, peekProfile,
+} from './store.js';
 import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, dueWeak, weakAyahs, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
 import { STATUS, isMistake } from './matcher.js';
 import { speechSupported } from './speech.js';
@@ -38,10 +41,11 @@ function toast(msg, ms = 2600) {
 
 // ---------- التنقل ----------
 // كل شاشة لها مدخل في سجل المتصفح حتى يعمل زر الرجوع في الموبايل
-const TAB_VIEWS = ['home', 'weak', 'free', 'plan'];
+const TAB_VIEWS = ['home', 'weak', 'free', 'plan', 'people'];
 
 function go(view, params = {}, { push = true } = {}) {
   if (cleanup) { cleanup(); cleanup = null; }
+  app.onsubmit = null;
   const tab = TAB_VIEWS.includes(view) ? view : null;
   for (const b of tabs.querySelectorAll('button')) {
     if (b.dataset.view === tab) b.setAttribute('aria-current', 'page');
@@ -49,11 +53,13 @@ function go(view, params = {}, { push = true } = {}) {
   }
   // شاشتا الحفظ والتسميع تملآن الشاشة ويحل شريط التحكم محل شريط التنقل
   document.body.classList.toggle('immersive', !tab);
+  document.body.dataset.view = view;
   if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
-  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView };
+  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople };
   views[view](params);
   refreshBadge();
+  refreshProfileButton();
 }
 
 // الرجوع من الشاشات الفرعية: نستخدم سجل المتصفح لو أمكن
@@ -72,6 +78,19 @@ tabs.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-view]');
   if (b) go(b.dataset.view);
 });
+
+function refreshProfileButton() {
+  const p = activeProfile();
+  const many = getProfiles().list.length > 1;
+  const btn = document.getElementById('profile-btn');
+  btn.setAttribute('aria-current', document.body.dataset.view === 'people' ? 'page' : 'false');
+  document.getElementById('profile-avatar').textContent = p.name.trim().charAt(0) || '؟';
+  document.getElementById('profile-avatar').style.background = p.color;
+  document.getElementById('profile-name').textContent = many ? p.name : 'الأشخاص';
+  btn.setAttribute('aria-label', `${p.name} — تبديل الشخص أو إضافة شخص`);
+}
+
+document.getElementById('profile-btn').addEventListener('click', () => go('people'));
 
 function refreshBadge() {
   const n = dueWeak().length;
@@ -558,6 +577,134 @@ function renderFree() {
   app.onclick = null;
 }
 
+// ================= الأشخاص وملف الحفظ =================
+function renderPeople() {
+  const { list, active } = getProfiles();
+  const today = dayKey();
+  const card = (p) => {
+    const d = peekProfile(p.id);
+    const known = new Set(d.memorized);
+    for (const s of d.settings.prior) for (let a = 1; a <= ayahCount(s); a++) known.add(toGlobal(s, a));
+    const due = Object.values(d.weak).filter((w) => !w.mastered && w.due <= today).length;
+    const isActive = p.id === active;
+    return `<li class="card person ${isActive ? 'is-active' : ''}">
+      <span class="avatar big" style="background:${p.color}" aria-hidden="true">${esc(p.name.trim().charAt(0) || '؟')}</span>
+      <div class="person-body">
+        <h2>${esc(p.name)} ${isActive ? '<span class="tag ok">الحالي</span>' : ''}</h2>
+        <p class="muted small">${d.setupDone ? `${ar(known.size)} آية محفوظة${due ? ` · ${ar(due)} كلمة للمراجعة اليوم` : ''}` : 'لم يبدأ خطته بعد'}</p>
+        <div class="row actions">
+          ${isActive ? `<button type="button" class="btn primary" data-act="open" data-id="${p.id}">${icon('today')}ورد اليوم</button>`
+            : `<button type="button" class="btn primary" data-act="switch" data-id="${p.id}">${icon('check')}اختيار</button>`}
+          <button type="button" class="btn ghost" data-act="rename" data-id="${p.id}">تغيير الاسم</button>
+          ${list.length > 1 ? `<button type="button" class="btn ghost danger" data-act="delete" data-id="${p.id}">${icon('trash', { size: 18 })}حذف</button>` : ''}
+        </div>
+        <div class="inline-panel" id="panel-${p.id}" hidden></div>
+      </div>
+    </li>`;
+  };
+
+  app.innerHTML = `
+    <header class="page-head">
+      <h1>الأشخاص</h1>
+      <p class="muted">كل شخص له خطته وتقدمه ونقاط ضعفه لوحده على نفس الموبايل.</p>
+    </header>
+    <ul class="people">${list.map(card).join('')}</ul>
+    <form class="card form add-person" id="add-form">
+      <label class="field"><span>إضافة شخص جديد</span>
+        <div class="combo wide"><input type="text" id="new-name" maxlength="30" placeholder="الاسم" autocomplete="off" required>
+        <button type="submit" class="btn primary">${icon('sprout')}إضافة</button></div></label>
+      <p class="error small" id="name-error" hidden>${icon('alert', { size: 16 })}اكتب الاسم الأول.</p>
+    </form>
+    <section class="card">
+      <h2>${icon('download', { size: 20 })} ملف الحفظ</h2>
+      <p class="muted small">البيانات محفوظة على الموبايل ده بس. احفظ ملف فيه كل الأشخاص عشان لو غيّرت الموبايل أو مسحت المتصفح،
+        أو عشان تنقلهم لموبايل تاني. ابعته لنفسك على واتساب أو احفظه في Drive.</p>
+      <div class="row actions">
+        <button type="button" class="btn primary" data-act="export">${icon('download')}حفظ ملف</button>
+        <label class="btn file-btn">${icon('upload')}فتح ملف حفظ<input type="file" id="imp" accept="application/json,.json"></label>
+      </div>
+      <p class="muted small">عند فتح ملف: الأشخاص بنفس الاسم تتحدث بياناتهم، والأسماء الجديدة تتضاف.</p>
+    </section>
+  `;
+
+  const panel = (id, html) => {
+    app.querySelectorAll('.inline-panel').forEach((x) => { x.hidden = true; x.innerHTML = ''; });
+    const el = document.getElementById(`panel-${id}`);
+    el.innerHTML = html;
+    el.hidden = false;
+    el.querySelector('input, .btn')?.focus();
+  };
+
+  app.onclick = async (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const { act, id } = b.dataset;
+    if (act === 'open') go('home');
+    if (act === 'switch') { switchProfile(id); toast(`أهلاً ${activeProfile().name}`); go('home'); }
+    if (act === 'rename') {
+      const p = list.find((x) => x.id === id);
+      panel(id, `<form class="combo wide" data-form="rename" data-id="${id}">
+        <input type="text" maxlength="30" value="${esc(p.name)}" aria-label="الاسم الجديد" required>
+        <button type="submit" class="btn primary">حفظ</button></form>`);
+    }
+    if (act === 'delete') {
+      const p = list.find((x) => x.id === id);
+      panel(id, `<p class="verdict warn">${icon('alert')}<span>هيتمسح كل تقدم ${esc(p.name)} ونقاط ضعفه نهائياً. لو عاوز تحتفظ بيها احفظ «ملف الحفظ» الأول.</span></p>
+        <div class="row actions"><button type="button" class="btn danger" data-act="delete-yes" data-id="${id}">${icon('trash', { size: 18 })}أيوه، احذف ${esc(p.name)}</button>
+        <button type="button" class="btn ghost" data-act="cancel">إلغاء</button></div>`);
+    }
+    if (act === 'delete-yes') { const name = list.find((x) => x.id === id).name; deleteProfile(id); toast(`اتحذف ${name}`); go('people', {}, { push: false }); }
+    if (act === 'cancel') go('people', {}, { push: false });
+    if (act === 'export') await saveBackupFile();
+  };
+  app.onsubmit = (e) => {
+    const f = e.target;
+    e.preventDefault();
+    if (f.id === 'add-form') {
+      const name = document.getElementById('new-name').value.trim();
+      if (!name) { document.getElementById('name-error').hidden = false; document.getElementById('new-name').focus(); return; }
+      const id = addProfile(name);
+      switchProfile(id);
+      toast(`أهلاً ${name} — اظبط خطتك`);
+      go('home');
+    }
+    if (f.dataset.form === 'rename') {
+      renameProfile(f.dataset.id, f.querySelector('input').value);
+      go('people', {}, { push: false });
+    }
+  };
+  document.getElementById('imp').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const r = importData(await file.text());
+      toast(`تم فتح الملف: ${r.added ? `${ar(r.added)} شخص جديد` : ''}${r.added && r.replaced ? ' و' : ''}${r.replaced ? `${ar(r.replaced)} اتحدّث` : ''}`, 4000);
+      go('people', {}, { push: false });
+    } catch (err) { toast(`ما قدرتش أفتح الملف: ${err.message}`, 5000); }
+  };
+}
+
+// حفظ ملف النسخة الاحتياطية: على الموبايل نفتح قائمة المشاركة (واتساب، Drive…) لو متاحة
+async function saveBackupFile() {
+  const name = `hifz-${dayKey()}.json`;
+  const blob = new Blob([exportData()], { type: 'application/json' });
+  try {
+    const file = new File([blob], name, { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'ملف حفظ رفيق الحفظ' });
+      return;
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('اتحفظ الملف في التنزيلات');
+}
+
 // ================= الخطة والإعدادات =================
 function renderPlan({ welcome = false } = {}) {
   const st = getState();
@@ -569,7 +716,7 @@ function renderPlan({ welcome = false } = {}) {
   app.innerHTML = `
     ${welcome ? `<section class="card welcome">
       <img src="icons/icon.svg" alt="" width="56" height="56">
-      <h1>أهلاً بك في رفيق الحفظ</h1>
+      <h1>${getProfiles().list.length > 1 ? `أهلاً ${esc(activeProfile().name)}` : 'أهلاً بك في رفيق الحفظ'}</h1>
       <p>خطة يومية فيها <b>حفظ جديد</b> و<b>مراجعة قريبة</b> و<b>مراجعة بعيدة</b> و<b>نقاط ضعفك</b>.
       وقت التسميع يكون النص مخفياً، وكل كلمة تقولها صح تظهر، ولو أخطأت أو نسيت يحفظها ويذكّرك بها حتى تثبت.</p>
       <p class="muted small">اضبط الخطة المناسبة لك — تقدر تغيرها في أي وقت.</p></section>`
@@ -653,14 +800,14 @@ function renderPlan({ welcome = false } = {}) {
     </form>
 
     ${welcome ? '' : `<section class="card">
-      <h2>نسخة احتياطية</h2>
-      <p class="muted small">بياناتك محفوظة على هذا الجهاز فقط. صدّرها لنقلها لجهاز آخر.</p>
+      <h2>ملف الحفظ والأشخاص</h2>
+      <p class="muted small">احفظ ملف فيه تقدم كل الأشخاص، أو ضيف شخص جديد بخطة مستقلة.</p>
       <div class="row actions">
-        <button type="button" class="btn" data-act="export">${icon('download')}تصدير</button>
-        <label class="btn file-btn">${icon('upload')}استيراد<input type="file" id="imp" accept="application/json"></label>
+        <button type="button" class="btn" data-act="people">${icon('download')}ملف الحفظ والأشخاص</button>
       </div>
       <div class="danger-zone">
-        <button type="button" class="btn ghost danger" data-act="reset">${icon('trash', { size: 18 })}مسح كل البيانات</button>
+        <button type="button" class="btn ghost danger" data-act="reset">${icon('trash', { size: 18 })}ابدأ من الأول (${esc(activeProfile().name)})</button>
+        <div id="reset-confirm" hidden></div>
       </div>
     </section>`}
   `;
@@ -739,19 +886,16 @@ function renderPlan({ welcome = false } = {}) {
     }
     if (act === 'clearprior') { form.querySelectorAll('input[name=prior]').forEach((c) => { c.checked = false; }); showProj(); }
     if (act === 'ics') downloadIcs(read().reminderTime);
-    if (act === 'export') {
-      const blob = new Blob([exportData()], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `hifz-backup-${dayKey()}.json`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    if (act === 'people') go('people');
+    if (act === 'reset') {
+      const box = document.getElementById('reset-confirm');
+      box.hidden = false;
+      box.innerHTML = `<p class="verdict warn">${icon('alert')}<span>هيتمسح كل تقدم ${esc(activeProfile().name)} ونقاط ضعفه وخطته. الأشخاص التانيين مش هيتأثروا.</span></p>
+        <div class="row actions"><button type="button" class="btn danger" data-act="reset-yes">أيوه، امسح</button>
+        <button type="button" class="btn ghost" data-act="reset-no">إلغاء</button></div>`;
     }
-    if (act === 'reset' && confirm('سيتم مسح الخطة وكل التقدم ونقاط الضعف. متأكد؟')) { resetAll(); go('home'); }
-  };
-  const imp = document.getElementById('imp');
-  if (imp) imp.onchange = async () => {
-    try { importData(await imp.files[0].text()); toast('تم الاستيراد'); go('home'); } catch (err) { toast(`فشل الاستيراد: ${err.message}`); }
+    if (act === 'reset-no') document.getElementById('reset-confirm').hidden = true;
+    if (act === 'reset-yes') { resetAll(); go('home'); }
   };
 }
 
@@ -784,7 +928,7 @@ function checkReminder() {
   if (!pending.length) return;
   const weak = plan.tasks.find((t) => t.id === 'weak').count;
   update((x) => { x.lastReminder = today; });
-  notify('ورد اليوم في انتظارك', `${pending.map((t) => t.title).join(' · ')}${weak ? `\nعندك ${weak} كلمة من نقاط ضعفك تحتاج مراجعة` : ''}`);
+  notify(getProfiles().list.length > 1 ? `ورد ${activeProfile().name} في انتظاره` : 'ورد اليوم في انتظارك', `${pending.map((t) => t.title).join(' · ')}${weak ? `\nعندك ${weak} كلمة من نقاط ضعفك تحتاج مراجعة` : ''}`);
 }
 
 function downloadIcs(time) {

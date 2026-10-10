@@ -568,6 +568,38 @@ input:hover, select:hover { border-color: var(--muted); }
 .file-btn:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
 .danger-zone { border-top: 1px solid var(--line); margin-top: var(--s4); padding-top: var(--s3); }
 
+/* ================= الأشخاص ================= */
+.profile-btn {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  min-height: var(--tap); padding: 0 var(--s3) 0 var(--s2); margin-inline-start: auto;
+  border: 1px solid rgba(255, 255, 255, .35); border-radius: 999px;
+  background: rgba(255, 255, 255, .1); color: inherit; cursor: pointer; font-size: .875rem; font-weight: 600;
+  max-width: 45vw;
+}
+.profile-btn #profile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-btn[aria-current="page"] { background: rgba(255, 255, 255, .22); }
+@media (prefers-color-scheme: dark) { .profile-btn { border-color: var(--line-strong); background: var(--surface-2); } }
+@media (min-width: 760px) { .tabs { margin-inline-start: auto; } .profile-btn { margin-inline-start: var(--s2); } }
+.avatar {
+  display: inline-grid; place-items: center; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 50%; color: #fff; font-weight: 700; font-size: .9375rem;
+  border: 2px solid rgba(255, 255, 255, .7);
+}
+.avatar.big { width: 48px; height: 48px; font-size: 1.25rem; border: 0; }
+.people { list-style: none; padding: 0; margin: 0 0 var(--s3); }
+.person { display: flex; gap: var(--s3); align-items: flex-start; }
+.person.is-active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary), var(--shadow); }
+.person-body { flex: 1; min-width: 0; }
+.person h2 { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin: 0; }
+.inline-panel { margin-top: var(--s3); }
+.combo.wide { grid-template-columns: 1fr auto; }
+input[type=text] {
+  width: 100%; min-height: var(--tap); background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm); padding: 0 var(--s3); font-size: 1rem;
+}
+.btn.danger:not(.ghost) { border-color: var(--bad); }
+section.card > h2 { display: flex; align-items: center; gap: var(--s2); }
+
 /* ================= الإشعار المؤقت ================= */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
