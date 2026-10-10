@@ -568,6 +568,12 @@ input:hover, select:hover { border-color: var(--muted); }
 .file-btn:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
 .danger-zone { border-top: 1px solid var(--line); margin-top: var(--s4); padding-top: var(--s3); }
 
+.position { display: flex; align-items: center; gap: var(--s1); color: var(--muted); margin: 2px 0 0; }
+.first-portion:not(:empty) {
+  margin-top: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--radius-sm);
+  background: var(--primary-soft); color: var(--ink); border-inline-start: 3px solid var(--primary);
+}
+
 /* ================= الأشخاص ================= */
 .profile-btn {
   display: inline-flex; align-items: center; gap: var(--s2);

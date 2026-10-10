@@ -5,16 +5,62 @@ let OFFSETS = null;         // الفهرس العام لأول آية في كل
 let TOTAL = 0;              // 6236
 const wordCache = new Map();
 
+let LAYOUT = null;           // لكل آية: [الصفحة، أول سطر، آخر سطر] في مصحف المدينة
+
 export async function loadQuran() {
   if (SURAHS) return;
-  const res = await fetch('data/quran.json');
-  if (!res.ok) throw new Error('تعذر تحميل نص القرآن');
+  const [res, lay] = await Promise.all([fetch('data/quran.json'), fetch('data/layout.json')]);
+  if (!res.ok || !lay.ok) throw new Error('تعذر تحميل نص القرآن');
   const data = await res.json();
   SURAHS = data.surahs.map(([name, type, ayahs]) => ({ name, type, ayahs }));
   OFFSETS = [];
   let acc = 0;
   for (const s of SURAHS) { OFFSETS.push(acc); acc += s.ayahs.length; }
   TOTAL = acc;
+  LAYOUT = (await lay.json()).ayahs;
+}
+
+// ---------- مصحف المدينة: الصفحات والأسطر ----------
+// ٦٠٤ صفحة × ١٥ سطراً؛ كل صفحة تبدأ ببداية آية
+export const LINES_PER_PAGE = 15;
+export const ayahPage = (g) => LAYOUT[g][0];
+// رقم عام للسطر في المصحف كله (للعدّ)
+const globalLine = (page, line) => (page - 1) * LINES_PER_PAGE + (line - 1);
+
+// الأسطر التي تشغلها الآية (أرقام عامة)
+export function ayahLines(g) {
+  const [p, a, b] = LAYOUT[g];
+  const out = [];
+  for (let l = a; l <= b; l++) out.push(globalLine(p, l));
+  return out;
+}
+
+// عدد الأسطر الفعلية التي تشغلها مجموعة آيات (السطر المشترك بين آيتين يُحسب مرة)
+export function linesCount(list) {
+  const set = new Set();
+  for (const g of list) for (const l of ayahLines(g)) set.add(l);
+  return set.size;
+}
+
+// هل تبدأ الآية في منتصف السطر (بعد نهاية آية قبلها على نفس السطر)؟
+export function startsMidLine(g) {
+  if (g === 0) return false;
+  const [p, a] = LAYOUT[g];
+  const [pp, , pb] = LAYOUT[g - 1];
+  return pp === p && pb === a;
+}
+
+// وصف موضع مجموعة آيات في المصحف: "صفحة ٢، من السطر ٥ إلى السطر ٩"
+export function describePosition(list) {
+  if (!list.length) return '';
+  const sorted = [...list].sort((x, y) => x - y);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const [p1, l1] = LAYOUT[first];
+  const [p2, , l2] = LAYOUT[last];
+  const from = `${startsMidLine(first) ? 'من وسط السطر' : 'من السطر'} ${toArabicDigits(l1)}`;
+  if (p1 === p2) return `صفحة ${toArabicDigits(p1)}، ${from} إلى السطر ${toArabicDigits(l2)}`;
+  return `صفحة ${toArabicDigits(p1)} ${from} ← صفحة ${toArabicDigits(p2)} السطر ${toArabicDigits(l2)}`;
 }
 
 export const surahCount = () => 114;

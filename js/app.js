@@ -1,12 +1,12 @@
 import {
   loadQuran, surahName, ayahCount, toGlobal, fromGlobal, ayahWords, ayahText,
-  describeAyahs, toArabicDigits, surahRangeLabel,
+  describeAyahs, toArabicDigits, surahRangeLabel, describePosition,
 } from './quran.js';
 import {
   getState, update, save, dayKey, formatDay, exportData, importData, resetAll, DEFAULT_SETTINGS,
   getProfiles, activeProfile, switchProfile, addProfile, renameProfile, deleteProfile, peekProfile,
 } from './store.js';
-import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, dueWeak, weakAyahs, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
+import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, previewChunk, dueWeak, weakAyahs, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
 import { STATUS, isMistake } from './matcher.js';
 import { speechSupported } from './speech.js';
 import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
@@ -120,7 +120,8 @@ function renderHome() {
       };
       range = `<p class="muted small empty">${empty[t.id]}</p>`;
     } else {
-      range = `<p class="range">${esc(describeAyahs(t.ayahs))} <span class="muted small">· ${ar(t.ayahs.length)} آية</span></p>`;
+      range = `<p class="range">${esc(describeAyahs(t.ayahs))} <span class="muted small">· ${ar(t.ayahs.length)} آية</span></p>
+        ${t.id === 'weak' ? '' : `<p class="position small">${icon('book', { size: 14 })}${describePosition(t.ayahs)}</p>`}`;
       if (t.id === 'new' && !t.done) {
         actions = `<button type="button" class="btn primary" data-act="guided">${icon('sprout')}حفّظني خطوة بخطوة</button>
                    <button type="button" class="btn" data-act="study">${icon('headphones')}استمع</button>
@@ -208,7 +209,7 @@ function renderStudy() {
   app.innerHTML = `
     <div class="sub-head">
       <button type="button" class="icon-btn" data-act="back" aria-label="رجوع">${icon('back', { size: 22 })}</button>
-      <div class="sub-title"><h1>الحفظ الجديد</h1><p class="muted small">${esc(describeAyahs(t.ayahs))}</p></div>
+      <div class="sub-title"><h1>الحفظ الجديد</h1><p class="muted small">${esc(describeAyahs(t.ayahs))} · ${describePosition(t.ayahs)}</p></div>
     </div>
     <details class="card tip">
       <summary>${icon('info', { size: 18 })}طريقة الحفظ المقترحة</summary>
@@ -737,6 +738,8 @@ function renderPlan({ welcome = false } = {}) {
             <input type="number" name="amount" min="0.5" step="0.5" inputmode="decimal" value="${s.amount}" aria-label="المقدار">
             <select name="unit" aria-label="الوحدة">${unitOpts(s.unit)}</select>
           </div>
+          <p class="muted small">الأسطر والصفحات حسب مصحف المدينة (١٥ سطر في الصفحة). الورد يبدأ دايماً من أول آية ويقف عند نهاية آية، فممكن يقل سطر أو يزيد حسب طول الآيات.</p>
+          <div class="first-portion" id="first-portion" aria-live="polite"></div>
         </div>
         <fieldset class="field" aria-describedby="days-help days-error">
           <legend>أيام الحفظ الجديد</legend>
@@ -835,6 +838,10 @@ function renderPlan({ welcome = false } = {}) {
     };
   };
   const showProj = () => {
+    const first = previewChunk(read());
+    document.getElementById('first-portion').innerHTML = first.length
+      ? `<b>ورد أول يوم:</b> ${esc(describeAyahs(first))}<br><span class="small">${describePosition(first)}</span>`
+      : '';
     const p = projection(read());
     document.getElementById('proj').innerHTML = p.ayahs
       ? `<div class="proj-head">${icon('today')}<b>تقدير موعد الإتمام</b></div>

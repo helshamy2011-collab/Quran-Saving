@@ -1,12 +1,10 @@
 // خطة الحفظ: الحفظ الجديد + المراجعة القريبة + المراجعة البعيدة + نقاط الضعف
 
 import { getState, update, dayKey, addDays } from './store.js';
-import { toGlobal, ayahCount, ayahWordCount, totalAyahs, fromGlobal, toArabicDigits } from './quran.js';
+import { toGlobal, ayahCount, totalAyahs, fromGlobal, toArabicDigits, linesCount, ayahPage, startsMidLine, LINES_PER_PAGE } from './quran.js';
 import { STATUS, isMistake } from './matcher.js';
 
-// متوسط مصحف المدينة: ٦٠٤ صفحة، ١٥ سطراً، ≈ ٧٧٤٠٠ كلمة
-export const WORDS_PER_LINE = 8.5;
-export const WORDS_PER_PAGE = 128;
+// الأسطر والصفحات حقيقية من مصحف المدينة (٦٠٤ صفحة × ١٥ سطراً)
 export const UNIT_LABEL = { ayah: 'آية', line: 'سطر', page: 'صفحة' };
 
 // مراحل مراجعة نقطة الضعف (بالأيام): كل مرة تقرأها صح تتباعد المراجعة
@@ -25,25 +23,41 @@ export function planOrder(settings) {
   return order;
 }
 
-function budgetWords(unit, amount) {
-  if (unit === 'line') return amount * WORDS_PER_LINE;
-  if (unit === 'page') return amount * WORDS_PER_PAGE;
-  return Infinity;
+// حجم مجموعة آيات بالوحدة المطلوبة (عدد آيات، أو أسطر/صفحات المصحف الفعلية)
+export function unitSize(list, unit) {
+  if (unit === 'ayah') return list.length;
+  const lines = linesCount(list);
+  return unit === 'page' ? lines / LINES_PER_PAGE : lines;
 }
 
-// يأخذ آيات من القائمة حتى يكتمل المقدار المطلوب
+// يأخذ آيات من القائمة حتى يكتمل المقدار المطلوب.
+// الورد يبدأ دائماً من أول آية ويقف عند نهاية آية (لا نقطع الآية):
+// - صفحات كاملة: كل آيات الصفحة (صفحات مصحف المدينة تبدأ وتنتهي بآية)
+// - أسطر (أو نصف صفحة): نضيف الآية التالية لو جعلت عدد الأسطر أقرب للمطلوب
 function takeChunk(list, unit, amount) {
   if (unit === 'ayah') return list.slice(0, Math.max(1, Math.round(amount)));
-  const budget = budgetWords(unit, amount);
+  if (unit === 'page' && Number.isInteger(amount)) {
+    const pages = new Set();
+    const out = [];
+    for (const g of list) {
+      const p = ayahPage(g);
+      if (!pages.has(p) && pages.size >= amount) break;
+      pages.add(p);
+      out.push(g);
+    }
+    return out;
+  }
+  const budget = Math.max(1, Math.round(unit === 'page' ? amount * LINES_PER_PAGE : amount));
+  // لو الورد بدأ من وسط سطر، فهذا السطر اتحسب في ورد أمس، فلا نحسبه مرتين
+  const shared = list.length && startsMidLine(list[0]) ? 1 : 0;
   const out = [];
-  let words = 0;
+  let count = 0;
   for (const g of list) {
-    const w = ayahWordCount(g);
-    // لا نقطع إذا تجاوزنا المقدار بكثير، إلا لو كانت أول آية
-    if (out.length && words + w > budget * 1.25) break;
+    const next = linesCount([...out, g]) - shared;
+    if (out.length && next > budget && next - budget >= budget - count) break;
     out.push(g);
-    words += w;
-    if (words >= budget) break;
+    count = next;
+    if (count >= budget) break;
   }
   return out;
 }
@@ -228,7 +242,6 @@ export function recordSession({ taskId, label, words, status, score, reading = f
 export function stats() {
   const state = getState();
   const known = memorizedSet(state);
-  const words = [...known].reduce((n, g) => n + ayahWordCount(g), 0);
   const days = new Set(state.sessions.map((x) => x.date));
   let streak = 0;
   let d = dayKey();
@@ -237,7 +250,8 @@ export function stats() {
   const weakAll = Object.values(state.weak);
   return {
     ayahs: known.size,
-    pages: words / WORDS_PER_PAGE,
+    // متوسط أسطر الآيات في الصفحة (بدون أسماء السور والبسملة) ≈ ١٤٫٦
+    pages: (linesCount([...known]) * 604) / 8820,
     percent: (known.size / totalAyahs()) * 100,
     streak,
     weakActive: weakAll.filter((w) => !w.mastered).length,
@@ -246,15 +260,19 @@ export function stats() {
   };
 }
 
+// ورد أول يوم بإعدادات معينة (للمعاينة في صفحة الخطة)
+export function previewChunk(settings) {
+  const rem = remainingNew({ ...getState(), settings });
+  return takeChunk(rem, settings.unit, settings.amount);
+}
+
 // تقدير موعد الختم بالخطة الحالية
 export function projection(settings = getState().settings) {
   const state = getState();
   const rem = remainingNew({ ...state, settings });
-  const words = rem.reduce((n, g) => n + ayahWordCount(g), 0);
-  const perDay = settings.unit === 'ayah'
-    ? settings.amount * (words / Math.max(1, rem.length))
-    : budgetWords(settings.unit, settings.amount);
-  const studyDays = Math.ceil(words / Math.max(1, perDay));
+  // نحاكي الأوراد يوماً بيوم لأن كل ورد يقف عند نهاية آية
+  let studyDays = 0;
+  for (let i = 0; i < rem.length; studyDays++) i += takeChunk(rem.slice(i, i + 400), settings.unit, settings.amount).length;
   const perWeek = Math.max(1, settings.studyDays.length);
   const calendarDays = Math.ceil((studyDays / perWeek) * 7);
   const last = rem.length ? fromGlobal(rem[rem.length - 1]) : null;

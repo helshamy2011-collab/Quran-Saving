@@ -1,5 +1,5 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v5';
+const CACHE = 'hifz-v6';
 const ASSETS = [
   './',
   'index.html',
@@ -14,6 +14,7 @@ const ASSETS = [
   'js/recitation.js',
   'js/guided.js',
   'data/quran.json',
+  'data/layout.json',
   'icons/icon.svg',
   'manifest.webmanifest',
 ];
