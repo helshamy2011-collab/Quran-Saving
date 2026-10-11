@@ -57,7 +57,7 @@ export class Recitation {
       if (act === 'hint') this.hint();
       if (act === 'ok') this.ok();
       if (act === 'undo') this.undo();
-      if (act === 'finish') this.onFinishRequest?.();
+      if (act === 'finish') this.finishRequest();
     };
     mushafEl.onclick = (e) => {
       const w = e.target.closest('.w');
@@ -172,10 +172,12 @@ export class Recitation {
     this.lastSession = session;
     const used = this.consumed.get(key) || 0;
     if (!isFinal) {
+      this.lastInterim = { key, tokens };
       const n = m.feedInterim(tokens.slice(used));
       if (n) { this.consumed.set(key, used + n); this.paint(); }
       return;
     }
+    if (this.lastInterim?.key === key) this.lastInterim = null;
     // نختار من بدائل التعرف الأقرب للنص
     let best = alts[0];
     let bestScore = -Infinity;
@@ -191,6 +193,22 @@ export class Recitation {
     m.feedFinal(best.slice(used));
     this.consumed.delete(key);
     this.paint();
+  }
+
+  // زر الإنهاء: آخر كلمات قد تكون قيلت ولم تصل كنتيجة نهائية من التعرف الصوتي
+  finishRequest() {
+    const m = this.matcher;
+    if (!m || this.completed) return;
+    if (this.lastInterim) {
+      const { key, tokens } = this.lastInterim;
+      this.lastInterim = null;
+      m.snapshot();
+      m.feedFinal(tokens.slice(this.consumed.get(key) || 0));
+      this.log.push(`${tokens.join(' ')} (غير مكتملة)`);
+    }
+    if (!m.done) m.finishTail(2);
+    this.paint();
+    if (!this.completed) this.onFinishRequest?.();
   }
 
   syncMic() {

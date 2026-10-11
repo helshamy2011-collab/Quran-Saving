@@ -1,7 +1,7 @@
 // محرك المطابقة: يقارن الكلمات المسموعة بنص المصحف كلمة كلمة
 // ويحدد: صحيح / خطأ / سقط (تخطّاه) / نسيه (طلب تلميح) / تردد ثم صحّح
 
-import { normalizeArabic, wordMatches, wordScore, joinedWord, rivalsOf } from './quran.js';
+import { normalizeArabic, wordMatches, wordScore, joinedWord, rivalsOf, isWawFaVariant, isQuranWord } from './quran.js';
 
 export const STATUS = {
   HIDDEN: 'hidden',
@@ -29,7 +29,28 @@ export class Matcher {
     this.missStreak = 0;
     this.missHeard = [];
     this.afterGap = false; // الميكروفون أعاد التشغيل للتو (بعد وقفة) فقد تضيع كلمة
+    this.heardHist = [];   // آخر الكلمات المسموعة (لحذف ما يعيده التعرف الصوتي في بداية الجملة التالية)
     this.history = [];
+  }
+
+  // التعرف الصوتي (خاصة على الآيفون) قد يعيد آخر ما سمعه في بداية النتيجة التالية:
+  // "قل أعوذ برب الناس" ثم "قل أعوذ برب الناس ملك الناس". نحذف الجزء المكرر قبل المطابقة.
+  dropOverlap(t) {
+    const hist = this.heardHist;
+    // لو بداية النتيجة هي الكلمة المنتظرة فعلاً فليست تكراراً (آيات فيها ألفاظ متكررة: ثم كفروا ثم…)
+    if (!t.length || this.done || wordMatches(t[0], this.words[this.pos])) return t;
+    const same = (a, b) => a === b || wordMatches(a, { forms: [b] });
+    for (let k = Math.min(hist.length, t.length); k >= 2; k--) {
+      let ok = true;
+      for (let j = 0; j < k && ok; j++) ok = same(t[j], hist[hist.length - k + j]);
+      if (ok) return t.slice(k);
+    }
+    return t;
+  }
+
+  remember(tokens) {
+    this.heardHist.push(...tokens);
+    if (this.heardHist.length > 40) this.heardHist.splice(0, this.heardHist.length - 40);
   }
 
   get done() { return this.pos >= this.words.length; }
@@ -65,10 +86,11 @@ export class Matcher {
   feedFinal(tokens) {
     const before = this.pos;
     // حرف منفرد (مثل "ن" من الغنة عند الوقف) ضوضاء وليس كلمة
-    const t = tokens.map(normalizeArabic).filter((x) => x.length > 1);
+    const t = this.dropOverlap(tokens.map(normalizeArabic).filter((x) => x.length > 1));
     for (let i = 0; i < t.length && !this.done; i++) {
       i += this.step(t, i, true) - 1;
     }
+    this.remember(t);
     return this.pos - before;
   }
 
@@ -83,6 +105,7 @@ export class Matcher {
       if (!n) break;
       used += n;
     }
+    this.remember(t.slice(0, used).filter((x) => x.length > 1));
     return used;
   }
 
@@ -164,6 +187,13 @@ export class Matcher {
       if (wordMatches(heard, target)) return this.skipTo(k);
     }
 
+    // إعادة التزامن: أسقط جملة كاملة (٤ كلمات فأكثر) — نبحث أبعد بشرط تطابق كلمتين متتاليتين
+    if (nextHeard) {
+      for (let k = 4; k <= 12 && p + k + 1 < W.length; k++) {
+        if (wordMatches(heard, W[p + k]) && wordMatches(nextHeard, W[p + k + 1])) return this.skipTo(k);
+      }
+    }
+
     // كلمة قصيرة جداً لا تطابق شيئاً (مثل "ان" من غنة النون المشددة) غالباً ضوضاء من التعرف الصوتي
     if (heard.length <= 2) return 1;
 
@@ -183,10 +213,14 @@ export class Matcher {
   // الكلمات من المؤشر حتى p+k-1 سقطت (أو قيل مكان أولها كلمة خطأ)، والكلمة p+k صحيحة
   skipTo(k) {
     const p = this.pos;
-    // سقطت كلمة واحدة فقط: لو كانت قصيرة (في، من، ما…) فالتعرف الصوتي كثيراً ما يسقطها وهي مقروءة،
-    // ولو كان الميكروفون أعاد التشغيل للتو فقد ضاعت في الفجوة — في الحالتين "لم تُسمع بوضوح" لا خطأ
-    const unsure = k === 1 && this.missStreak === 0 && (this.afterGap || this.words[p].forms[0].length <= 2);
-    for (let j = 0; j < k; j++) this.set(p + j, unsure ? STATUS.UNSURE : this.missStreak > 0 && j === 0 ? STATUS.WRONG : STATUS.SKIPPED);
+    // التعرف الصوتي العام ضعيف مع التلاوة: كثيراً ما يسقط كلمة أو كلمتين أو يكتبهما كلاماً مشوشاً
+    // ("من شر" ← "يشل"). فلا نحسب الخطأ إلا بدليل واضح: زيادة/حذف واو أو فاء (واحد/أحد)، أو قال
+    // مكانها كلمة قرآنية أخرى (ربي بدل برب)، أو أسقط ٣ كلمات فأكثر. أما كلمة أو كلمتان سقطتا أو
+    // تشوشتا بكلام ليس من القرآن فـ"لم تُسمع بوضوح"
+    const garbled = this.missStreak > 0;
+    const clearWrong = garbled && this.missHeard.some((h) => isWawFaVariant(h, this.words[p]) || (h.length >= 3 && isQuranWord(h)));
+    const unsure = k <= 2 && !clearWrong;
+    for (let j = 0; j < k; j++) this.set(p + j, unsure ? STATUS.UNSURE : garbled && j === 0 ? STATUS.WRONG : STATUS.SKIPPED);
     this.afterGap = false;
     if (this.missStreak > 0) this.heardAt[p] = this.missHeard.join(' ');
     this.set(p + k, STATUS.OK);
@@ -194,6 +228,16 @@ export class Matcher {
     this.missStreak = 0;
     this.missHeard = [];
     return 1;
+  }
+
+  // المستخدم أنهى التسميع والكلمات الأخيرة (كلمة أو كلمتان) لم تصل من التعرف الصوتي:
+  // غالباً قالها والتعرف توقف قبل كتابتها
+  finishTail(max = 2) {
+    const left = this.words.length - this.pos;
+    if (left <= 0 || left > max || this.pos === 0) return false;
+    for (let i = this.pos; i < this.words.length; i++) this.set(i, STATUS.UNSURE);
+    this.pos = this.words.length;
+    return true;
   }
 
   // المستخدم نسي: اكشف الكلمة التالية وسجّلها

@@ -40,14 +40,21 @@ test('كلمات بالرسم العثماني: الصلاة، الزكاة، ي
   assert.equal(m2.score().mistakes, 0, m2.status.map((s, i) => `${m2.words[i].text}:${s}`).join(' '));
 });
 
-test('إسقاط كلمة يُسجَّل كسقط', () => {
+test('إسقاط كلمة واحدة: "لم تُسمع بوضوح" (التعرف الصوتي كثيراً ما يسقط كلمات)', () => {
   const m = new Matcher(words(112, 1, 4));
   say(m, 'قل هو الله أحد الله الصمد لم يلد ولم يولد ولم يكن له أحد'); // أسقط "كفوا"
   assert.ok(m.done);
   const bad = m.status.map((s, i) => [m.words[i].text, s]).filter(([, s]) => s !== STATUS.OK);
   assert.equal(bad.length, 1);
-  assert.equal(bad[0][1], STATUS.SKIPPED);
+  assert.equal(bad[0][1], STATUS.UNSURE);
   assert.match(bad[0][0], /كُفُو/);
+});
+
+test('إسقاط ٣ كلمات فأكثر يُحسب خطأ', () => {
+  // أسقط "له ما في السماوات" بعد "ولا نوم"
+  const m2 = new Matcher(words(2, 255, 255));
+  say(m2, 'الله لا إله إلا هو الحي القيوم لا تأخذه سنة ولا نوم وما في الأرض من ذا الذي يشفع عنده إلا بإذنه');
+  assert.ok(m2.status.filter((x) => x === STATUS.SKIPPED).length >= 3, m2.status.join(','));
 });
 
 test('كلمة خاطئة مكان كلمة صحيحة تُسجّل خطأ', () => {
@@ -136,7 +143,7 @@ test('التجويد: القراءة بالإملاء العادي ما زالت
   assert.equal(m.score().mistakes, 0);
   const m2 = new Matcher(words(2, 5, 5));
   say(m2, 'أولئك على هدى من وأولئك هم المفلحون'); // أسقط "ربهم"
-  assert.equal(m2.score().mistakes, 1);
+  assert.equal(m2.status[4], STATUS.UNSURE);
 });
 
 test('الحروف المقطعة: تُقبل بأسماء الحروف منفصلة أو متصلة أو كما تُكتب', () => {
@@ -229,4 +236,23 @@ test('كلمة ضاعت أثناء إعادة تشغيل الميكروفون ل
   say(m, 'يوسوس في صدور الناس');
   assert.equal(m.status[4], STATUS.UNSURE);
   assert.equal(m.score().mistakes, 0);
+});
+
+test('تسجيل حقيقي من آيفون (سورة الناس مقروءة صح): لا أخطاء', () => {
+  // ما كتبه التعرف الصوتي فعلاً: تكرار في بداية كل جزء، و"من شر" ← "يشل"، و"الخناس" ضاعت، وآخر كلمة لم تصل
+  const m = new Matcher(words(114, 1, 6));
+  for (const f of ['المحمول المحمول قل أعوذ برب الناس', 'قل أعوذ برب الناس ملك الناس إله الناس', 'ما الناس إله الناس وسواس', 'يشل الوسواس', 'الذي يوسوس في صدور الناس من الجن']) say(m, f);
+  assert.equal(m.score().mistakes, 0, m.status.map((x, i) => `${m.words[i].text}:${x}`).join(' '));
+  assert.ok(m.finishTail());
+  assert.ok(m.done);
+  assert.equal(m.score().mistakes, 0);
+});
+
+test('كلمة قرآنية مكان الكلمة (ربي بدل برب) خطأ، وتشويش ليس من القرآن (يشل) لم يُسمع بوضوح', () => {
+  const m = new Matcher(words(114, 1, 1));
+  say(m, 'قل أعوذ ربي الناس');
+  assert.equal(m.status[2], STATUS.WRONG);
+  const m2 = new Matcher(words(113, 1, 1));
+  say(m2, 'قل أعوذ يشل الفلق');
+  assert.equal(m2.status[2], STATUS.UNSURE, m2.status.join(','));
 });

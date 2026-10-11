@@ -291,6 +291,27 @@ function sim(a, b) {
 }
 
 // هل الكلمة المسموعة (مطبّعة) تطابق كلمة المصحف؟
+// هل الكلمة المسموعة من ألفاظ القرآن؟ الخطأ الحقيقي في الحفظ يكون غالباً بكلمة قرآنية (ربي بدل برب)،
+// أما تشويش التعرف الصوتي فيُنتج غالباً كلاماً ليس في القرآن ("يشل"، "المحمول")
+let VOCAB = null;
+export function isQuranWord(heard) {
+  if (!VOCAB) {
+    VOCAB = new Set();
+    for (let g = 0; g < TOTAL; g++) for (const w of ayahWords(g)) for (const f of w.forms) VOCAB.add(f);
+  }
+  return VOCAB.has(heard) || (heard.startsWith('ال') && VOCAB.has(heard.slice(2)));
+}
+
+// زيادة أو حذف واو/فاء في أول الكلمة (واحد/أحد، فلا/لا، فكلوا/وكلوا): خطأ حفظ حقيقي لا سوء سماع
+export function isWawFaVariant(heard, word) {
+  return word.forms.some((f) => {
+    if (heard === f) return false;
+    if (heard.length === f.length) return /^[وف]/.test(heard) && /^[وف]/.test(f) && heard.slice(1) === f.slice(1);
+    const [long, short] = heard.length > f.length ? [heard, f] : [f, heard];
+    return long.length === short.length + 1 && /^[وف]/.test(long) && long.slice(1) === short;
+  });
+}
+
 export function wordMatches(heard, word) {
   return wordScore(heard, word) > 0;
 }
