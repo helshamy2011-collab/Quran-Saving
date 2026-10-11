@@ -48,6 +48,39 @@ export class Matcher {
     return t;
   }
 
+  // عدد الكلمات في بداية نتيجة مؤقتة هي إعادة لما قُرئ بالفعل (الآيفون يعيد النص أو يعدّل تقسيمه):
+  // "الله الصمد لم يلد ولم يولد" وقد وصلنا إلى "ولم" ← نتخطى أول ٤ كلمات
+  replayLen(t) {
+    if (!t.length || this.done) return 0;
+    const W = this.words;
+    const first = t.findIndex((x) => x.length > 1);
+    if (first < 0 || wordMatches(t[first], W[this.pos])) return 0;
+    const back = Math.min(this.pos, 12);
+    for (let k = back; k >= 1; k--) {
+      // هل تبدأ النتيجة بآخر k كلمات تجاوزناها؟
+      let j = 0;
+      let i = this.pos - k;
+      while (j < t.length && i < this.pos) {
+        if (t[j].length <= 1) { j++; continue; }
+        if (!wordMatches(t[j], W[i])) break;
+        i++; j++;
+      }
+      if (i === this.pos) return j;
+    }
+    return this.dropLen(t);
+  }
+
+  // نفس فكرة dropOverlap لكن تُرجع عدد الكلمات المحذوفة
+  dropLen(t) {
+    const kept = t.filter((x) => x.length > 1);
+    const rest = this.dropOverlap(kept);
+    let drop = kept.length - rest.length;
+    if (!drop) return 0;
+    let j = 0;
+    while (j < t.length && drop) { if (t[j].length > 1) drop--; j++; }
+    return j;
+  }
+
   remember(tokens) {
     this.heardHist.push(...tokens);
     if (this.heardHist.length > 40) this.heardHist.splice(0, this.heardHist.length - 40);
@@ -98,7 +131,7 @@ export class Matcher {
   // يُرجع عدد الكلمات المسموعة التي استُهلكت
   feedInterim(tokens) {
     const t = tokens.map(normalizeArabic);
-    let used = 0;
+    let used = this.replayLen(t);
     while (used < t.length && !this.done) {
       if (t[used].length <= 1) { used++; continue; }
       const n = this.step(t, used, false);

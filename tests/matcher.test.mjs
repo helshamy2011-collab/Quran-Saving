@@ -256,3 +256,20 @@ test('كلمة قرآنية مكان الكلمة (ربي بدل برب) خطأ�
   say(m2, 'قل أعوذ يشل الفلق');
   assert.equal(m2.status[2], STATUS.UNSURE, m2.status.join(','));
 });
+
+test('نتيجة مؤقتة تعيد ما قُرئ قبلها (آيفون): الكلمات الجديدة تظهر فوراً', () => {
+  // الإخلاص: ظهر حتى «لم يلد» ثم وصلت نتيجة مؤقتة جديدة تبدأ من «الله الصمد»
+  const m = new Matcher(words(112, 1, 4));
+  say(m, 'قل هو الله أحد');
+  m.feedInterim('الله الصمد لم يلد'.split(' '));
+  assert.equal(m.words[m.pos].text.replace(/[^ء-ي]/g, ''), 'ولم');
+  const n = m.feedInterim('الله الصمد لم يلد ولم يولد'.split(' '));
+  assert.equal(n, 6);
+  assert.equal(m.status[7], STATUS.OK);
+  // إعادة تقسيم: «لميلد» كانت كلمة ثم صارت «لم يلد» — باقي الكلمات بعد العدّ القديم يبدأ بكلمة مقروءة
+  const m2 = new Matcher(words(112, 1, 4));
+  say(m2, 'قل هو الله أحد الله الصمد لم يلد');
+  assert.equal(m2.feedInterim('يلد ولم يولد'.split(' ')), 3);
+  assert.equal(m2.status[7], STATUS.OK);
+  assert.equal(m2.score().mistakes, 0);
+});
