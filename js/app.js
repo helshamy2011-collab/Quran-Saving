@@ -323,6 +323,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
       <li><i class="sw wrong"></i>خطأ / أسقطها</li>
       <li><i class="sw hint"></i>نسيتها</li>
       <li><i class="sw corrected"></i>تردد</li>
+      <li><i class="sw unsure"></i>ما اتسمعتش بوضوح</li>
       ${st.settings.warnWeak ? '<li><i class="sw weak"></i>أخطأت فيها سابقاً — ركّز</li>' : ''}
     </ul>`}
     <div class="mushaf" id="mushaf" aria-label="نص الآيات">${''}</div>
@@ -377,6 +378,17 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
         : `<p class="verdict warn">${icon('alert')}<span>تحتاج ${ar(passMark)}٪ على الأقل مع إكمال الورد لاعتماد الحفظ. راجع المواضع الملونة وأعد التسميع.</span></p>`;
     }
     const memoryCount = mistakes.filter(({ i }) => !readIssue[i]).length;
+    const unsure = status.map((x, i) => ({ x, i })).filter((o) => o.x === STATUS.UNSURE);
+    const unsureHtml = unsure.length ? `<div class="unsure-box">
+      <p>${icon('info', { size: 16 })}<b>مش متأكد إنك قلتها:</b> ${unsure.map(({ i }) => `<span class="w unsure">${words[i].text}</span>`).join('، ')}</p>
+      <p class="muted small">البرنامج ما سمعهاش بوضوح (كلمة قصيرة، أو جت وقت ما الميكروفون كان بيعيد التشغيل بعد وقفة). مش محسوبة غلط — بس اتأكد إنك قلتها.</p>
+    </div>` : '';
+    const logHtml = rec.log.length ? `<details class="heard-log">
+      <summary>${icon('mic', { size: 16 })}اللي سمعه البرنامج</summary>
+      <ol>${rec.log.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
+      <p class="muted small">لو البرنامج حسب عليك كلمة غلط وانت قلتها صح، انسخ ده وابعته عشان يتظبط.</p>
+      <button type="button" class="btn small-btn" data-act="copy-log">نسخ</button>
+    </details>` : '';
     document.getElementById('dock').hidden = true;
     const res = document.getElementById('result');
     res.innerHTML = `<section class="card result" aria-labelledby="result-title">
@@ -392,6 +404,8 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
         ? 'دي غالباً مشكلة نطق أو البرنامج مش بيفهمها. اسمعها من القارئ وصحّح نطقها، ووقت التسميع لو "غلط" فيها مش هتتحسب خطأ حفظ.'
         : 'ستظهر لك في «نقاط الضعف» غداً، ثم بعد يومين، ثم ٤، ثم أسبوع… حتى تثبت تماماً.'}</p>`
       : `<p class="verdict ok">${icon('award')}<span>لا أخطاء، ما شاء الله!</span></p>`}
+      ${unsureHtml}
+      ${logHtml}
       <div class="row actions">
         <button type="button" class="btn primary" data-act="again">${icon('repeat')}${reading ? 'اقرأ مرة أخرى' : 'سمّع مرة أخرى'}</button>
         ${reading ? `<button type="button" class="btn" data-act="to-memory">${icon('mic')}سمّعها من حفظك</button>` : ''}
@@ -407,6 +421,12 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
       if (cmp) { const [x, y] = cmp.dataset.cmp.split(',').map(Number); openCompare(x, y); return; }
       const b = e.target.closest('[data-act]');
       if (!b) return;
+      if (b.dataset.act === 'copy-log') {
+        const ref = describeAyahs(ayahs);
+        const text = `${ref}\n${rec.log.join('\n')}`;
+        navigator.clipboard?.writeText(text).then(() => toast('اتنسخ — ابعته في الشات')).catch(() => toast('ما قدرتش أنسخ — صوّر الشاشة'));
+        return;
+      }
       if (b.dataset.act === 'again') go('recite', { taskId, label, ayahs, returnTo, reading });
       if (b.dataset.act === 'to-memory') go('recite', { taskId: 'free', label: 'تسميع حر', ayahs, returnTo });
       if (b.dataset.act === 'again-weak') {

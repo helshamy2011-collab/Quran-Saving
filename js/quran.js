@@ -255,6 +255,12 @@ function uthmaniForms(word) {
   forms.add(normalizeArabic(word.replace(/وٰ/g, 'ا')));
   // "يَٰٓأَيُّهَا" → "يا ايها"
   forms.add(normalizeArabic(word.replace(/^(ي[َ]?)ٰٓ?/, 'يا')));
+  // اللام الشمسية لا تُنطق: ٱلنَّاس → "اناس"، ووَٱلنَّاس موصولة → "وناس"
+  const shamsi = /ٱل(?=[ء-ي]ّ)/;
+  if (shamsi.test(word)) {
+    forms.add(normalizeArabic(word.replace(shamsi, 'ا')));
+    forms.add(normalizeArabic(word.replace(shamsi, '')));
+  }
   forms.delete('');
   return [...forms];
 }

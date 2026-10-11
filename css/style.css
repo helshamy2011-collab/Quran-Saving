@@ -579,6 +579,16 @@ input:hover, select:hover { border-color: var(--muted); }
   background: var(--primary-soft); color: var(--ink); border-inline-start: 3px solid var(--primary);
 }
 
+.w.unsure { color: var(--muted); text-decoration: underline dashed var(--muted); text-underline-offset: 8px; cursor: pointer; }
+.sw.unsure { background: transparent; border-bottom: 2px dashed var(--muted); border-radius: 0; }
+.unsure-box { background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--s3); margin-top: var(--s3); }
+.unsure-box p { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.unsure-box .w.unsure { font-family: var(--font-quran); font-size: 1.25rem; }
+.heard-log { margin-top: var(--s3); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.heard-log summary { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); cursor: pointer; font-weight: 600; color: var(--muted); }
+.heard-log ol { margin: 0 0 var(--s2); padding-inline-start: var(--s5); font-size: .9375rem; }
+.heard-log li { margin-bottom: 4px; }
+
 /* ================= المتشابهات ================= */
 mark.diff { background: var(--warn-bg); color: var(--warn); box-shadow: inset 0 -2px 0 var(--warn-line); border-radius: 4px; padding: 0 3px; }
 .sim-chip {

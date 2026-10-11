@@ -148,7 +148,7 @@ function applyWeak(s, words, status, today, confused = []) {
       const item = s.weak[key];
       if (isMistake(st)) {
         // كلمة يخطئ فيها التعرف حتى وهو يقرأ بالنظر: "خطأ/تردد" هنا غالباً سوء فهم لا نسيان
-        if ((st === STATUS.WRONG || st === STATUS.CORRECTED) && isReadIssue(word.g, word.w, s)) return;
+        if ((st === STATUS.WRONG || st === STATUS.CORRECTED || st === STATUS.SKIPPED) && isReadIssue(word.g, word.w, s)) return;
         const it = item || { g: word.g, w: word.w, misses: 0, hits: 0, history: [] };
         it.misses++;
         it.box = 0;

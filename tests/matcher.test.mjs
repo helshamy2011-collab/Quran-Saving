@@ -135,7 +135,7 @@ test('التجويد: القراءة بالإملاء العادي ما زالت
   say(m, 'أولئك على هدى من ربهم وأولئك هم المفلحون');
   assert.equal(m.score().mistakes, 0);
   const m2 = new Matcher(words(2, 5, 5));
-  say(m2, 'أولئك على هدى ربهم وأولئك هم المفلحون'); // أسقط "من"
+  say(m2, 'أولئك على هدى من وأولئك هم المفلحون'); // أسقط "ربهم"
   assert.equal(m2.score().mistakes, 1);
 });
 
@@ -206,4 +206,27 @@ test('المتشابهات: القراءة الصحيحة لا تتأثر', () =
     say(m, text);
     assert.equal(m.score().mistakes, 0, `${s}:${a} ${m.status.map((x, i) => `${m.words[i].text}:${x}`).join(' ')}`);
   }
+});
+
+test('كلمة قصيرة أسقطها التعرف الصوتي (في، من…) تُعلَّم "لم تُسمع بوضوح" ولا تُحسب خطأ', () => {
+  const m = new Matcher(words(114, 5, 5));
+  say(m, 'الذي يوسوس صدور الناس');
+  assert.equal(m.status[2], STATUS.UNSURE);
+  assert.equal(m.score().mistakes, 0);
+});
+
+test('الوقف والغنة: تكرار آخر الجملة بعد الوقفة، وحرف منفرد، و"ان" قبل الناس — لا أخطاء', () => {
+  const m = new Matcher(words(114, 4, 6));
+  for (const f of ['من شر الوسواس الخناس ن', 'من شر الوسواس الخناس الذي يوسوس في صدور ان الناس', 'من الجنة ون ناس']) say(m, f);
+  assert.ok(m.done, m.status.join(','));
+  assert.equal(m.score().mistakes, 0, m.status.map((x, i) => `${m.words[i].text}:${x}`).join(' '));
+});
+
+test('كلمة ضاعت أثناء إعادة تشغيل الميكروفون لا تُحسب خطأ', () => {
+  const m = new Matcher(words(114, 4, 5));
+  say(m, 'من شر الوسواس الخناس');
+  m.afterGap = true;
+  say(m, 'يوسوس في صدور الناس');
+  assert.equal(m.status[4], STATUS.UNSURE);
+  assert.equal(m.score().mistakes, 0);
 });

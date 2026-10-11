@@ -64,7 +64,7 @@ export class Listener {
     };
     rec.onend = () => {
       if (this.active && this.rec === rec) {
-        setTimeout(() => { if (this.active) this.launch(); }, 150);
+        setTimeout(() => { if (this.active) this.launch(); }, 50);
       } else {
         this.onState('stopped');
       }

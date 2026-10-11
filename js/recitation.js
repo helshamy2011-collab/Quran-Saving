@@ -11,6 +11,7 @@ export const STATUS_LABEL = {
   [STATUS.SKIPPED]: 'أسقطها',
   [STATUS.HINT]: 'نسيها',
   [STATUS.CORRECTED]: 'تردد',
+  [STATUS.UNSURE]: 'ما اتسمعتش بوضوح',
 };
 
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -74,6 +75,8 @@ export class Recitation {
     document.addEventListener('keydown', this.onKey);
 
     this.consumed = new Map();
+    this.log = [];          // كل ما سمعه البرنامج (لعرضه في النتيجة ولتشخيص المشاكل)
+    this.lastSession = null;
     this.listener = this.manual ? null : new Listener({
       lang,
       onWords: (tokens, isFinal, key, alts) => this.onWords(tokens, isFinal, key, alts),
@@ -163,6 +166,10 @@ export class Recitation {
     if (this.completed || this.paused || !this.matcher) return;
     this.heardEl.textContent = `سمعت: ${tokens.join(' ')}`;
     const m = this.matcher;
+    // الميكروفون أعاد التشغيل (بعد وقفة): قد تكون كلمة ضاعت في الفجوة
+    const session = key.split(':')[0];
+    if (this.lastSession !== null && session !== this.lastSession) m.afterGap = true;
+    this.lastSession = session;
     const used = this.consumed.get(key) || 0;
     if (!isFinal) {
       const n = m.feedInterim(tokens.slice(used));
@@ -180,6 +187,7 @@ export class Recitation {
       if (sc > bestScore) { bestScore = sc; best = alt; }
     }
     m.snapshot();
+    this.log.push(best.join(' '));
     m.feedFinal(best.slice(used));
     this.consumed.delete(key);
     this.paint();

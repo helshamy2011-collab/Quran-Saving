@@ -10,6 +10,7 @@ export const STATUS = {
   WRONG: 'wrong',         // قال كلمة أخرى مكانها
   SKIPPED: 'skipped',     // أسقطها وأكمل بعدها
   HINT: 'hint',           // نسيها وطلب تلميحاً
+  UNSURE: 'unsure',       // لم تُسمع بوضوح (كلمة قصيرة أسقطها التعرف الصوتي، أو ضاعت أثناء إعادة تشغيل الميكروفون) — لا تُحسب خطأ
 };
 
 export const isMistake = (st) => st === STATUS.WRONG || st === STATUS.SKIPPED || st === STATUS.HINT || st === STATUS.CORRECTED;
@@ -27,6 +28,7 @@ export class Matcher {
     this.pos = 0;
     this.missStreak = 0;
     this.missHeard = [];
+    this.afterGap = false; // الميكروفون أعاد التشغيل للتو (بعد وقفة) فقد تضيع كلمة
     this.history = [];
   }
 
@@ -62,7 +64,8 @@ export class Matcher {
   // يُرجع عدد الكلمات التي تقدّم فيها المؤشر
   feedFinal(tokens) {
     const before = this.pos;
-    const t = tokens.map(normalizeArabic).filter(Boolean);
+    // حرف منفرد (مثل "ن" من الغنة عند الوقف) ضوضاء وليس كلمة
+    const t = tokens.map(normalizeArabic).filter((x) => x.length > 1);
     for (let i = 0; i < t.length && !this.done; i++) {
       i += this.step(t, i, true) - 1;
     }
@@ -75,7 +78,7 @@ export class Matcher {
     const t = tokens.map(normalizeArabic);
     let used = 0;
     while (used < t.length && !this.done) {
-      if (!t[used]) { used++; continue; }
+      if (t[used].length <= 1) { used++; continue; }
       const n = this.step(t, used, false);
       if (!n) break;
       used += n;
@@ -99,6 +102,7 @@ export class Matcher {
       this.pos = p + count;
       this.missStreak = 0;
       this.missHeard = [];
+      this.afterGap = false;
     };
 
     // 0) الحروف المقطعة: "الف لام ميم" (عدة كلمات مسموعة) = "الٓمٓ" (كلمة واحدة في المصحف)
@@ -148,8 +152,8 @@ export class Matcher {
     // 4) أسقط كلمة واحدة وأكمل بالتي بعدها
     if (W[p + 1] && wordMatches(heard, W[p + 1])) return this.skipTo(1);
 
-    // 5) تكرار لكلمة سابقة (إعادة للتثبيت) → تجاهل
-    for (let k = 1; k <= 3 && p - k >= 0; k++) {
+    // 5) تكرار لكلمات سابقة (إعادة للتثبيت، أو التعرف الصوتي أعاد آخر الجملة بعد وقفة) → تجاهل
+    for (let k = 1; k <= 8 && p - k >= 0; k++) {
       if (wordMatches(heard, W[p - k])) return 1;
     }
 
@@ -159,6 +163,9 @@ export class Matcher {
       if (target.forms[0].length < 3) continue; // كلمات قصيرة تسبب مطابقات كاذبة
       if (wordMatches(heard, target)) return this.skipTo(k);
     }
+
+    // كلمة قصيرة جداً لا تطابق شيئاً (مثل "ان" من غنة النون المشددة) غالباً ضوضاء من التعرف الصوتي
+    if (heard.length <= 2) return 1;
 
     // 7) كلمة غير مطابقة: بعد محاولتين خاطئتين نعتبرها خطأ ونكشفها
     this.missStreak++;
@@ -176,7 +183,11 @@ export class Matcher {
   // الكلمات من المؤشر حتى p+k-1 سقطت (أو قيل مكان أولها كلمة خطأ)، والكلمة p+k صحيحة
   skipTo(k) {
     const p = this.pos;
-    for (let j = 0; j < k; j++) this.set(p + j, this.missStreak > 0 && j === 0 ? STATUS.WRONG : STATUS.SKIPPED);
+    // سقطت كلمة واحدة فقط: لو كانت قصيرة (في، من، ما…) فالتعرف الصوتي كثيراً ما يسقطها وهي مقروءة،
+    // ولو كان الميكروفون أعاد التشغيل للتو فقد ضاعت في الفجوة — في الحالتين "لم تُسمع بوضوح" لا خطأ
+    const unsure = k === 1 && this.missStreak === 0 && (this.afterGap || this.words[p].forms[0].length <= 2);
+    for (let j = 0; j < k; j++) this.set(p + j, unsure ? STATUS.UNSURE : this.missStreak > 0 && j === 0 ? STATUS.WRONG : STATUS.SKIPPED);
+    this.afterGap = false;
     if (this.missStreak > 0) this.heardAt[p] = this.missHeard.join(' ');
     this.set(p + k, STATUS.OK);
     this.pos = p + k + 1;
