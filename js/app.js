@@ -1,6 +1,6 @@
 import {
   loadQuran, surahName, ayahCount, toGlobal, fromGlobal, ayahWords, ayahText,
-  describeAyahs, toArabicDigits, surahRangeLabel, describePosition,
+  describeAyahs, toArabicDigits, surahRangeLabel, describePosition, PAGES, pageAyahs, ayahPage,
   similarOf, compareAyahs, confusionFor,
 } from './quran.js';
 import {
@@ -13,6 +13,7 @@ import { speechSupported } from './speech.js';
 import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
 import { icon } from './icons.js';
 import { renderGuided } from './guided.js';
+import { renderPages, autoFit, getView, setView, tafsirOf } from './mushaf.js';
 
 const app = document.getElementById('app');
 const tabs = document.getElementById('tabs');
@@ -42,7 +43,7 @@ function toast(msg, ms = 2600) {
 
 // ---------- التنقل ----------
 // كل شاشة لها مدخل في سجل المتصفح حتى يعمل زر الرجوع في الموبايل
-const TAB_VIEWS = ['home', 'weak', 'free', 'plan', 'people', 'similar'];
+const TAB_VIEWS = ['home', 'mushaf', 'weak', 'free', 'plan', 'people', 'similar'];
 
 function go(view, params = {}, { push = true } = {}) {
   if (cleanup) { cleanup(); cleanup = null; }
@@ -57,7 +58,7 @@ function go(view, params = {}, { push = true } = {}) {
   document.body.dataset.view = view;
   if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
-  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar };
+  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar, mushaf: renderMushaf };
   views[view](params);
   refreshBadge();
   refreshProfileButton();
@@ -190,29 +191,47 @@ function recentSessions() {
 // ================= شاشة الحفظ (قبل التسميع) =================
 let audio = null;
 
+// زر التبديل بين صفحات المصحف والنص المتصل
+function viewToggle() {
+  const pages = getView() === 'pages';
+  return `<button type="button" class="view-toggle" data-act="view" aria-pressed="${pages}" title="طريقة العرض">
+    ${icon(pages ? 'book' : 'text', { size: 18 })}<span>${pages ? 'صفحة المصحف' : 'نص متصل'}</span></button>`;
+}
+
+function toggleView() {
+  setView(getView() === 'pages' ? 'flow' : 'pages');
+  return getView();
+}
+
 function renderStudy() {
   const plan = todayPlan();
   const t = plan.tasks.find((x) => x.id === 'new');
   const weak = getState().weak;
   const reciter = getState().settings.reciter;
-  let html = '';
-  let lastS = 0;
-  for (const g of t.ayahs) {
-    const { s, a } = fromGlobal(g);
-    if (s !== lastS) { html += `<span class="surah-head">سورة ${surahName(s)}</span>`; lastS = s; }
-    html += ayahWords(g).map((w, i) => {
-      const wk = weak[`${g}:${i}`];
-      return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}">${w.text}</span>`;
-    }).join(' ');
-    html += ` <span class="ayah-end">﴿${ar(a)}﴾</span><button type="button" class="ayah-play" data-g="${g}" aria-label="استمع للآية ${ar(a)}">${icon('play', { size: 14 })}</button> `;
-    const sims = similarOf(g).filter((x) => !(x.score === 100 && fromGlobal(x.g).s === s));
-    if (sims.length) html += `<button type="button" class="sim-chip" data-sim="${g}">${icon('layers', { size: 14 })}متشابهة مع ${refOf(sims[0].g)}${sims.length > 1 ? ` و${ar(sims.length - 1)} غيرها` : ''}</button> `;
-  }
+  const studyWord = (w, g, i) => {
+    const wk = weak[`${g}:${i}`];
+    return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}" data-g="${g}">${w.text}</span>`;
+  };
+  const mushafHtml = () => {
+    if (getView() === 'pages') return renderPages(t.ayahs, { word: (idx, w, g, k) => studyWord(w, g, k) });
+    let html = '';
+    let lastS = 0;
+    for (const g of t.ayahs) {
+      const { s, a } = fromGlobal(g);
+      if (s !== lastS) { html += `<span class="surah-head">سورة ${surahName(s)}</span>`; lastS = s; }
+      html += ayahWords(g).map((w, i) => studyWord(w, g, i)).join(' ');
+      html += ` <button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(a)} — التفسير">﴿${ar(a)}﴾</button><button type="button" class="ayah-play" data-g="${g}" aria-label="استمع للآية ${ar(a)}">${icon('play', { size: 14 })}</button> `;
+      const sims = similarOf(g).filter((x) => !(x.score === 100 && fromGlobal(x.g).s === s));
+      if (sims.length) html += `<button type="button" class="sim-chip" data-sim="${g}">${icon('layers', { size: 14 })}متشابهة مع ${refOf(sims[0].g)}${sims.length > 1 ? ` و${ar(sims.length - 1)} غيرها` : ''}</button> `;
+    }
+    return html;
+  };
 
   app.innerHTML = `
     <div class="sub-head">
       <button type="button" class="icon-btn" data-act="back" aria-label="رجوع">${icon('back', { size: 22 })}</button>
       <div class="sub-title"><h1>الحفظ الجديد</h1><p class="muted small">${esc(describeAyahs(t.ayahs))} · ${describePosition(t.ayahs)}</p></div>
+      ${viewToggle()}
     </div>
     <details class="card tip">
       <summary>${icon('info', { size: 18 })}طريقة الحفظ المقترحة</summary>
@@ -230,13 +249,25 @@ function renderStudy() {
       <button type="button" class="btn" data-act="play-all" id="play-all">${icon('play', { size: 16 })}<span>استمع للورد كله</span></button>
       <p class="muted small">القارئ: ${RECITERS[reciter] || reciter}</p>
     </div>
-    <div class="mushaf study">${html}</div>
+    <p class="muted small helper">${icon('info', { size: 16 })}اضغط على رقم الآية ﴿ ﴾ للتفسير والاستماع لها.</p>
+    <div class="mushaf study" id="mushaf"></div>
     <div class="dock"><div class="inner">
       <p class="heard">لما تحس إنك حفظت، ابدأ التسميع والنص هيكون مخفي.</p>
       <button type="button" class="btn big" data-act="guided">${icon('sprout')}حفّظني</button>
       <button type="button" class="btn primary big" data-act="recite">${icon('mic')}جاهز — سمّع</button>
     </div></div>
   `;
+
+  const mushafEl = document.getElementById('mushaf');
+  let unfit = null;
+  const paintMushaf = () => {
+    unfit?.();
+    unfit = null;
+    mushafEl.innerHTML = mushafHtml();
+    mushafEl.classList.toggle('paged', getView() === 'pages');
+    if (getView() === 'pages') unfit = autoFit(mushafEl);
+  };
+  paintMushaf();
 
   const playAllBtn = document.getElementById('play-all');
   const setPlayAll = (playing) => {
@@ -246,6 +277,7 @@ function renderStudy() {
   const stopAudio = () => {
     if (audio) { audio.pause(); audio = null; }
     app.querySelectorAll('.ayah-play.playing').forEach((b) => { b.classList.remove('playing'); b.innerHTML = icon('play', { size: 14 }); });
+    app.querySelectorAll('.w.playing').forEach((w) => w.classList.remove('playing'));
     setPlayAll(false);
   };
 
@@ -257,11 +289,15 @@ function renderStudy() {
     const next = () => {
       const g = queue.shift();
       app.querySelectorAll('.ayah-play.playing').forEach((b) => { b.classList.remove('playing'); b.innerHTML = icon('play', { size: 14 }); });
+      app.querySelectorAll('.w.playing').forEach((w) => w.classList.remove('playing'));
       if (g == null) { audio = null; setPlayAll(false); return; }
       setPlayAll(true);
       const { s, a } = fromGlobal(g);
       const btn = app.querySelector(`.ayah-play[data-g="${g}"]`);
       if (btn) { btn.classList.add('playing'); btn.innerHTML = icon('pause', { size: 14 }); }
+      const ws = app.querySelectorAll(`.w[data-g="${g}"]`);
+      ws.forEach((w) => w.classList.add('playing'));
+      ws[0]?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
       const el = new Audio(`https://everyayah.com/data/${reciter}/${String(s).padStart(3, '0')}${String(a).padStart(3, '0')}.mp3`);
       audio = el;
       el.onended = () => { if (audio === el) next(); };
@@ -276,16 +312,19 @@ function renderStudy() {
     if (p) return p.classList.contains('playing') ? stopAudio() : playQueue([Number(p.dataset.g)]);
     const sim = e.target.closest('.sim-chip');
     if (sim) return openCompare(Number(sim.dataset.sim));
+    const mark = e.target.closest('[data-ayah]');
+    if (mark) return openAyah(Number(mark.dataset.ayah), { onPlay: (g) => playQueue([g]) });
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
     if (act === 'back') back();
+    if (act === 'view') { toggleView(); b.outerHTML = viewToggle(); stopAudio(); paintMushaf(); }
     if (act === 'play-all') playQueue(t.ayahs);
     if (act === 'stop') stopAudio();
     if (act === 'recite') go('recite', { taskId: 'new', label: 'الحفظ الجديد', ayahs: t.ayahs });
     if (act === 'guided') go('guided');
   };
-  cleanup = stopAudio;
+  cleanup = () => { stopAudio(); unfit?.(); };
 }
 
 // ================= حفّظني =================
@@ -313,6 +352,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
       <button type="button" class="icon-btn" data-act="back" aria-label="رجوع">${icon('back', { size: 22 })}</button>
       <div class="sub-title"><h1>${esc(label)}</h1><p class="muted small">${esc(describeAyahs(ayahs))}</p></div>
       <span id="score" class="tag ok"></span>
+      ${viewToggle()}
     </div>
     <div class="progress" id="bar-wrap" role="progressbar" aria-label="نسبة ما سمّعته" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="bar" style="width:0"></i></div>
     ${!speechSupported ? `<div class="alert" role="note">${icon('info')}<div>متصفحك لا يدعم التعرف على الصوت. استخدم Chrome أو Edge أو Safari للتسميع بالصوت.
@@ -339,6 +379,11 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
     weak: st.weak,
     warnWeak: st.settings.warnWeak && !reading,
     onError: (msg) => toast(msg, 5000),
+    // التفسير أثناء التسميع: نوقف الميكروفون ولا نعرض نص الآية المخفي
+    onAyah: (g) => {
+      rec.pause();
+      openAyah(g, { hideText: !reading && !finished, onClose: () => { if (!finished) rec.resume(); } });
+    },
     onUpdate: (sc) => {
       const pct = Math.round((sc.done / sc.total) * 100);
       document.getElementById('bar').style.width = `${pct}%`;
@@ -439,7 +484,9 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
 
   app.onclick = (e) => {
     const b = e.target.closest('[data-act]');
-    if (b && !b.closest('#result') && b.dataset.act === 'back') back(returnTo);
+    if (!b || b.closest('#result')) return;
+    if (b.dataset.act === 'back') back(returnTo);
+    if (b.dataset.act === 'view') { rec.setLayout(toggleView()); b.outerHTML = viewToggle(); }
   };
   cleanup = () => { finished = true; rec.destroy(); };
 }
@@ -482,34 +529,83 @@ function compareBlock(g, h) {
   </div>`;
 }
 
-// نافذة المقارنة: الآية ومتشابهاتها، والكلمات المختلفة ملونة
-function openCompare(g, onlyWith = null) {
-  const list = onlyWith != null ? [onlyWith] : similarOf(g).slice(0, 3).map((x) => x.g);
-  if (!list.length) return;
+// نافذة منبثقة من أسفل الشاشة؛ onClick(e, close) لأزرارها
+function openSheet({ title, iconName, body, onClick, onClose }) {
   const prevFocus = document.activeElement;
   const sheet = document.createElement('div');
   sheet.className = 'sheet-backdrop';
-  sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cmp-title">
-    <div class="sheet-head"><h2 id="cmp-title">${icon('layers')}المتشابهات</h2>
+  sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head"><h2 id="sheet-title">${icon(iconName)}${title}</h2>
       <button type="button" class="icon-btn" data-close aria-label="إغلاق">${icon('back', { size: 22, cls: 'flip' })}</button></div>
-    <p class="muted small">الكلمات الملونة هي اللي بتفرق بين الآيتين.</p>
-    ${list.map((h) => `${compareBlock(g, h)}
-      <div class="row actions"><button type="button" class="btn primary" data-pair="${g},${h}">${icon('mic')}سمّعهم ورا بعض</button></div>`).join('<hr>')}
+    ${body}
   </div>`;
-  const close = () => { sheet.remove(); document.removeEventListener('keydown', onKey); prevFocus?.focus?.(); };
+  const close = () => {
+    if (!sheet.isConnected) return;
+    sheet.remove();
+    document.removeEventListener('keydown', onKey);
+    prevFocus?.focus?.();
+    onClose?.();
+  };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   sheet.addEventListener('click', (e) => {
-    if (e.target === sheet || e.target.closest('[data-close]')) close();
-    const pair = e.target.closest('[data-pair]');
-    if (pair) {
-      close();
-      const ayahs = pair.dataset.pair.split(',').map(Number).sort((x, y) => x - y);
-      go('recite', { taskId: 'similar', label: 'متشابهات', ayahs, returnTo: 'similar' });
-    }
+    if (e.target === sheet || e.target.closest('[data-close]')) { close(); return; }
+    onClick?.(e, close);
   });
   document.addEventListener('keydown', onKey);
   document.body.appendChild(sheet);
   sheet.querySelector('[data-close]').focus();
+  return { el: sheet.querySelector('.sheet'), close };
+}
+
+// نافذة المقارنة: الآية ومتشابهاتها، والكلمات المختلفة ملونة
+function openCompare(g, onlyWith = null) {
+  const list = onlyWith != null ? [onlyWith] : similarOf(g).slice(0, 3).map((x) => x.g);
+  if (!list.length) return;
+  openSheet({
+    title: 'المتشابهات',
+    iconName: 'layers',
+    body: `<p class="muted small">الكلمات الملونة هي اللي بتفرق بين الآيتين.</p>
+    ${list.map((h) => `${compareBlock(g, h)}
+      <div class="row actions"><button type="button" class="btn primary" data-pair="${g},${h}">${icon('mic')}سمّعهم ورا بعض</button></div>`).join('<hr>')}`,
+    onClick: (e, close) => {
+      const pair = e.target.closest('[data-pair]');
+      if (!pair) return;
+      close();
+      const ayahs = pair.dataset.pair.split(',').map(Number).sort((x, y) => x - y);
+      go('recite', { taskId: 'similar', label: 'متشابهات', ayahs, returnTo: 'similar' });
+    },
+  });
+}
+
+// نافذة الآية: التفسير الميسر، والاستماع، والمتشابهات
+// hideText: أثناء التسميع لا نعرض نص الآية حتى لا نكشف المخفي
+function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
+  const { s, a } = fromGlobal(g);
+  const sims = similarOf(g).filter((x) => !(x.score === 100 && fromGlobal(x.g).s === s));
+  const { el } = openSheet({
+    title: `${surahName(s)} — الآية ${ar(a)}`,
+    iconName: 'book',
+    body: `${hideText ? '' : `<p class="q ayah-q">${ayahText(g)} <span class="ayah-end">﴿${ar(a)}﴾</span></p>`}
+      <div class="row actions">
+        ${onPlay ? `<button type="button" class="btn" data-play>${icon('play', { size: 16 })}استمع للآية</button>` : ''}
+        ${sims.length && !hideText ? `<button type="button" class="btn" data-sim>${icon('layers', { size: 16 })}متشابهة مع ${refOf(sims[0].g)}</button>` : ''}
+      </div>
+      <section class="tafsir" aria-live="polite"><h3>التفسير الميسر</h3><p class="muted">جارٍ التحميل…</p></section>`,
+    onClose,
+    onClick: (e, close) => {
+      if (e.target.closest('[data-play]')) { close(); onPlay(g); }
+      if (e.target.closest('[data-sim]')) { close(); openCompare(g); }
+    },
+  });
+  const box = el.querySelector('.tafsir');
+  tafsirOf(g).then((t) => {
+    if (!t) { box.innerHTML = '<h3>التفسير الميسر</h3><p class="muted">لا يوجد تفسير لهذه الآية.</p>'; return; }
+    const range = t.from === t.to ? '' : ` <span class="muted small">(تفسير الآيات ${ar(t.from)}–${ar(t.to)} معاً)</span>`;
+    box.innerHTML = `<h3>التفسير الميسر${range}</h3>${t.text.split('\n').map((x) => `<p>${esc(x)}</p>`).join('')}
+      <p class="muted small source">التفسير الميسر — مجمع الملك فهد لطباعة المصحف الشريف</p>`;
+  }).catch(() => {
+    box.innerHTML = '<h3>التفسير الميسر</h3><p class="muted">تعذر تحميل التفسير — تأكد من الاتصال بالإنترنت وحاول مرة أخرى.</p>';
+  });
 }
 
 // أزواج المتشابهات التي حفظ المستخدم الآيتين فيها
@@ -663,6 +759,92 @@ function renderWeak() {
       go('weak');
     }
   };
+}
+
+// ================= المصحف (قراءة وتفسير) =================
+function renderMushaf({ page } = {}) {
+  let p = page || Number(localStorage.getItem('mushaf-page')) || 1;
+  const reciter = getState().settings.reciter;
+  app.innerHTML = `
+    <header class="page-head">
+      <h1>المصحف</h1>
+      <p class="muted">صفحات مصحف المدينة. اضغط على رقم الآية ﴿ ﴾ لتفسيرها (التفسير الميسر) أو الاستماع لها.</p>
+    </header>
+    <div class="reader-bar card">
+      <button type="button" class="icon-btn" data-act="prev" aria-label="الصفحة السابقة">${icon('chevronR', { size: 22 })}</button>
+      <label class="inline-field">صفحة <input type="number" id="pg" min="1" max="${PAGES}" inputmode="numeric"></label>
+      <select id="ps" aria-label="انتقل إلى سورة">${surahOptions(0)}</select>
+      <button type="button" class="icon-btn" data-act="next" aria-label="الصفحة التالية">${icon('chevronL', { size: 22 })}</button>
+    </div>
+    <div class="mushaf paged reader" id="mushaf"></div>
+    <div class="row actions reader-actions">
+      <button type="button" class="btn primary" data-act="recite">${icon('mic')}سمّع الصفحة دي</button>
+      <button type="button" class="btn" data-act="read">${icon('book')}اقرأها بالنظر</button>
+    </div>`;
+  const el = document.getElementById('mushaf');
+  const pg = document.getElementById('pg');
+  const ps = document.getElementById('ps');
+  let unfit = null;
+  let player = null;
+  const stop = () => {
+    if (player) { player.pause(); player = null; }
+    el.querySelectorAll('.w.playing').forEach((w) => w.classList.remove('playing'));
+  };
+  const show = (n) => {
+    n = Math.min(PAGES, Math.max(1, n));
+    // ترك حقل الرقم يطلق change مرة أخرى؛ إعادة الرسم وقتها تضيّع الضغطة على رقم الآية
+    if (n === p && el.childElementCount) { pg.value = p; return; }
+    stop();
+    p = n;
+    localStorage.setItem('mushaf-page', String(p));
+    const list = pageAyahs(p);
+    el.innerHTML = renderPages(list, { word: (i, w, g) => `<span class="w" data-g="${g}">${w.text}</span>` });
+    unfit?.();
+    unfit = autoFit(el);
+    pg.value = p;
+    ps.value = String(fromGlobal(list[0]).s);
+  };
+  const play = (g) => {
+    stop();
+    const { s, a } = fromGlobal(g);
+    const audioEl = new Audio(`https://everyayah.com/data/${reciter}/${String(s).padStart(3, '0')}${String(a).padStart(3, '0')}.mp3`);
+    player = audioEl;
+    el.querySelectorAll(`.w[data-g="${g}"]`).forEach((w) => w.classList.add('playing'));
+    audioEl.onended = () => { if (player === audioEl) stop(); };
+    audioEl.onerror = () => { toast('تعذر تشغيل الصوت — تأكد من الاتصال بالإنترنت'); stop(); };
+    audioEl.play().catch(() => {});
+  };
+  show(p);
+  pg.onchange = () => show(Number(pg.value) || 1);
+  ps.onchange = () => show(ayahPage(toGlobal(Number(ps.value), 1)));
+  app.onclick = (e) => {
+    const mark = e.target.closest('[data-ayah]');
+    if (mark) return openAyah(Number(mark.dataset.ayah), { onPlay: play });
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === 'next') show(p + 1);
+    if (act === 'prev') show(p - 1);
+    if (act === 'recite' || act === 'read') {
+      const reading = act === 'read';
+      go('recite', { taskId: 'free', label: reading ? `قراءة صفحة ${ar(p)}` : `تسميع صفحة ${ar(p)}`, ayahs: pageAyahs(p), returnTo: 'mushaf', reading });
+    }
+  };
+  // السحب يميناً = الصفحة التالية (كتقليب المصحف)
+  let sx = null;
+  let sy = null;
+  el.ontouchstart = (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; };
+  el.ontouchend = (e) => {
+    if (sx == null) return;
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    sx = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      show(dx > 0 ? p + 1 : p - 1);
+      el.scrollIntoView({ block: 'start', behavior: scrollBehavior() });
+    }
+  };
+  cleanup = () => { stop(); unfit?.(); };
 }
 
 // ================= تسميع حر =================

@@ -7,10 +7,15 @@ const wordCache = new Map();
 
 let LAYOUT = null;           // لكل آية: [الصفحة، أول سطر، آخر سطر] في مصحف المدينة
 let SIMILAR = {};            // المتشابهات: آية → [[آية مشابهة، نسبة التشابه]]
+let LINES = null;            // مواضع الكلمات في أسطر الصفحة: { ayahs: [[سطر، عدد…]], heads: {صفحة: [[سطر، نوع، سورة]]} }
+let PAGE_START = null;       // أول آية في كل صفحة
 
 export async function loadQuran() {
   if (SURAHS) return;
-  const [res, lay, sim] = await Promise.all([fetch('data/quran.json'), fetch('data/layout.json'), fetch('data/similar.json').catch(() => null)]);
+  const [res, lay, sim, lines] = await Promise.all([
+    fetch('data/quran.json'), fetch('data/layout.json'),
+    fetch('data/similar.json').catch(() => null), fetch('data/lines.json').catch(() => null),
+  ]);
   if (!res.ok || !lay.ok) throw new Error('تعذر تحميل نص القرآن');
   const data = await res.json();
   SURAHS = data.surahs.map(([name, type, ayahs]) => ({ name, type, ayahs }));
@@ -19,6 +24,9 @@ export async function loadQuran() {
   for (const s of SURAHS) { OFFSETS.push(acc); acc += s.ayahs.length; }
   TOTAL = acc;
   LAYOUT = (await lay.json()).ayahs;
+  PAGE_START = [];
+  LAYOUT.forEach(([p], g) => { if (PAGE_START[p] == null) PAGE_START[p] = g; });
+  try { if (lines?.ok) LINES = await lines.json(); } catch { LINES = null; }
   try { if (sim?.ok) SIMILAR = (await sim.json()).similar; } catch { SIMILAR = {}; }
 }
 
@@ -143,6 +151,24 @@ export function describePosition(list) {
   if (p1 === p2) return `صفحة ${toArabicDigits(p1)}، ${from} إلى السطر ${toArabicDigits(l2)}`;
   return `صفحة ${toArabicDigits(p1)} ${from} ← صفحة ${toArabicDigits(p2)} السطر ${toArabicDigits(l2)}`;
 }
+
+export const PAGES = 604;
+export const hasPageLines = () => !!LINES;
+// الآيات المكتوبة في صفحة
+export function pageAyahs(p) {
+  const out = [];
+  for (let g = PAGE_START[p]; g < TOTAL && LAYOUT[g][0] === p; g++) out.push(g);
+  return out;
+}
+// أسطر الآية في صفحتها: [[سطر، عدد الكلمات]] (عدد ٠ = سطر فيه رقم الآية فقط)
+export function ayahLineSegs(g) {
+  const a = LINES.ayahs[g];
+  const out = [];
+  for (let i = 0; i < a.length; i += 2) out.push([a[i], a[i + 1]]);
+  return out;
+}
+// اسم السورة والبسملة في الصفحة: [[سطر، ٠ اسم السورة | ١ البسملة، السورة]]
+export const pageHeads = (p) => LINES.heads[p] || [];
 
 export const surahCount = () => 114;
 export const totalAyahs = () => TOTAL;

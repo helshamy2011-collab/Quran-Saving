@@ -1,5 +1,5 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v12';
+const CACHE = 'hifz-v13';
 const ASSETS = [
   './',
   'index.html',
@@ -13,9 +13,11 @@ const ASSETS = [
   'js/icons.js',
   'js/recitation.js',
   'js/guided.js',
+  'js/mushaf.js',
   'data/quran.json',
   'data/layout.json',
   'data/similar.json',
+  'data/lines.json',
   'icons/icon.svg',
   'manifest.webmanifest',
 ];
@@ -32,6 +34,7 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// التفسير (data/tafsir) لا يُحمَّل مسبقاً لحجمه، ويُحفظ أول ما تفتح تفسير سورة
 // ملفات البرنامج: الشبكة أولاً ثم النسخة المحفوظة (حتى تصل التحديثات)
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);

@@ -132,7 +132,7 @@ main:focus { outline: none; }
 /* موبايل: شريط سفلي قريب من الإبهام */
 .tabs {
   position: fixed; inset: auto 0 0 0; z-index: 30;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); color: var(--muted);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
@@ -169,6 +169,10 @@ body.immersive .tabs { display: none; }
   .tabs button[aria-current="page"] { opacity: 1; background: rgba(255, 255, 255, .16); color: inherit; }
   .tabs .badge { position: static; }
   body.immersive .tabs { display: flex; }
+}
+@media (min-width: 760px) and (max-width: 980px) {
+  .tabs button { padding: 0 var(--s2); gap: 6px; font-size: .875rem; }
+  .brand span { display: none; }
 }
 @media (min-width: 760px) and (prefers-color-scheme: dark) {
   .tabs button:hover { background: var(--surface-2); }
@@ -693,3 +697,51 @@ body.immersive .toast { bottom: calc(160px + env(safe-area-inset-bottom)); }
   .mushaf { padding: var(--s3); }
   .card, fieldset.card { padding: var(--s3); }
 }
+
+/* ================= صفحات المصحف ================= */
+.mushaf.paged { background: transparent; border: 0; padding: 0; max-width: 600px; line-height: 1; text-align: initial; word-spacing: 0; }
+.page {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: inset 0 0 0 4px var(--surface), inset 0 0 0 5px color-mix(in srgb, var(--accent) 35%, transparent);
+  padding: .9em .6em .35em; margin: 0 0 var(--s3); font-size: 20px; line-height: 1;
+}
+.page .ln { display: flex; justify-content: space-between; align-items: center; height: 2.1em; white-space: nowrap; }
+.page .ln > * { flex: none; }
+.page.centered .ln, .page .ln.head, .page .ln.basmala { justify-content: center; gap: .3em; }
+.page.measuring .ln { width: max-content; justify-content: flex-start; gap: .2em; }
+/* القياس يقرأ الحجم فوراً: بلا انتقالات (وضع تقليل الحركة يجعل لكل خاصية انتقالاً قصيراً) */
+.page.measuring, .page.measuring * { transition: none !important; }
+.page .surah-title {
+  flex: 1; text-align: center; font-family: var(--font-ui); font-size: .6em; font-weight: 700; line-height: 2.4;
+  color: var(--primary); background: var(--primary-soft); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); border-radius: 999px;
+}
+.page .basmala-text { color: var(--ink); }
+.page-no { text-align: center; font-family: var(--font-ui); font-size: 12px; color: var(--muted); margin-top: .4em; }
+.page .w { padding: 0 .04em; }
+.page button.ayah-end { padding: 0 .08em; font-size: .75em; }
+.cw { color: var(--muted); opacity: .6; }
+button.ayah-end {
+  background: none; border: 0; font: inherit; font-size: .8em; color: var(--accent); cursor: pointer;
+  padding: 0 2px; border-radius: 6px; position: relative;
+}
+button.ayah-end::after { content: ''; position: absolute; inset: -8px -2px; } /* مساحة لمس أكبر */
+button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary-soft); }
+.w.playing { background: var(--primary-soft); border-radius: 4px; }
+
+.view-toggle {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 40px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); color: var(--primary);
+  font: 600 .8125rem var(--font-ui); cursor: pointer;
+}
+@media (max-width: 420px) { .view-toggle span { display: none; } .view-toggle { padding: 0 10px; } }
+
+.reader-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2) var(--s3); max-width: 600px; margin: 0 auto var(--s3); }
+.reader-bar input { width: 4.5em; }
+.reader-bar select { flex: 1; min-width: 0; }
+.reader-actions { max-width: 600px; margin: 0 auto; justify-content: center; }
+
+.ayah-q { font-family: var(--font-quran); font-size: 1.375rem; line-height: 2.1; margin: 0 0 var(--s2); }
+.tafsir { margin-top: var(--s3); }
+.tafsir h3 { margin: 0 0 var(--s2); }
+.tafsir p { line-height: 1.95; margin: 0 0 var(--s2); }
+.tafsir .source { margin-top: var(--s3); }

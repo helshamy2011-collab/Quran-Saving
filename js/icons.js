@@ -27,6 +27,9 @@ const P = {
   alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+  text: '<path d="M21 6H3"/><path d="M21 12H8"/><path d="M21 18H3"/>',
+  chevronR: '<path d="m9 18 6-6-6-6"/>',
+  chevronL: '<path d="m15 18-6-6 6-6"/>',
   award: '<circle cx="12" cy="8" r="6"/><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11"/>',
 };
 

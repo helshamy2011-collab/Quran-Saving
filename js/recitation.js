@@ -5,6 +5,7 @@ import { ayahWords, fromGlobal, surahName, toArabicDigits as ar } from './quran.
 import { Matcher, STATUS, isMistake } from './matcher.js';
 import { Listener, speechSupported } from './speech.js';
 import { icon } from './icons.js';
+import { renderPages, autoFit, getView } from './mushaf.js';
 
 export const STATUS_LABEL = {
   [STATUS.WRONG]: 'خطأ',
@@ -27,8 +28,9 @@ export class Recitation {
    * mushafEl: حاوية النص — dockEl: حاوية شريط التحكم
    * onUpdate(score) بعد كل تغيير — onComplete() عند آخر كلمة — onFinishRequest() زر الإنهاء
    */
-  constructor({ mushafEl, dockEl, lang, weak = {}, warnWeak = true, onUpdate, onComplete, onFinishRequest, onError, finishLabel = 'إنهاء التسميع' }) {
-    Object.assign(this, { mushafEl, dockEl, weak, warnWeak, onUpdate, onComplete, onFinishRequest, onError });
+  constructor({ mushafEl, dockEl, lang, weak = {}, warnWeak = true, onUpdate, onComplete, onFinishRequest, onError, onAyah, finishLabel = 'إنهاء التسميع' }) {
+    Object.assign(this, { mushafEl, dockEl, weak, warnWeak, onUpdate, onComplete, onFinishRequest, onError, onAyah });
+    this.layout = getView();
     this.manual = !speechSupported;
     this.active = true;
     this.completed = false;
@@ -60,6 +62,8 @@ export class Recitation {
       if (act === 'finish') this.finishRequest();
     };
     mushafEl.onclick = (e) => {
+      const mark = e.target.closest('[data-ayah]');
+      if (mark) { this.onAyah?.(Number(mark.dataset.ayah)); return; }
       const w = e.target.closest('.w');
       if (!w || !this.matcher || this.completed) return;
       const i = Number(w.dataset.i);
@@ -105,26 +109,47 @@ export class Recitation {
     this.consumed.clear();
     this.lastProgress = Date.now();
     this.mushafEl.classList.toggle('reading', reading);
+    this.render();
+  }
 
-    let html = '';
-    let prev = null;
-    let idx = 0;
-    for (const g of ayahs) {
-      const { s, a } = fromGlobal(g);
-      if (!prev || prev.s !== s || prev.a !== a - 1) {
-        html += `<span class="surah-head">${a === 1 ? `سورة ${surahName(s)}` : `${surahName(s)} — من الآية ${ar(a)}`}</span>`;
+  // صفحات المصحف أو نص متصل
+  setLayout(layout) {
+    this.layout = layout;
+    if (this.matcher) this.render();
+  }
+
+  render() {
+    const wordHtml = (idx) => {
+      const { g, w } = this.words[idx];
+      const wk = this.weak[`${g}:${w}`];
+      const mark = this.warnWeak && wk && !wk.mastered ? ' weak-mark' : '';
+      const shown = this.visible[idx];
+      return `<span class="w ${shown ? 'shown' : 'hidden'}${mark}" data-i="${idx}"${shown ? '' : ' aria-hidden="true"'}>${this.words[idx].text}</span>`;
+    };
+    const marker = (g) => `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(fromGlobal(g).a)} — التفسير">﴿${ar(fromGlobal(g).a)}﴾</button>`;
+    const pages = this.layout === 'pages';
+    this.unfit?.();
+    this.unfit = null;
+    this.mushafEl.classList.toggle('paged', pages);
+    if (pages) {
+      this.mushafEl.innerHTML = renderPages(this.ayahs, { word: (i) => wordHtml(i), marker });
+      this.unfit = autoFit(this.mushafEl);
+    } else {
+      let html = '';
+      let prev = null;
+      let idx = 0;
+      for (const g of this.ayahs) {
+        const { s, a } = fromGlobal(g);
+        if (!prev || prev.s !== s || prev.a !== a - 1) {
+          html += `<span class="surah-head">${a === 1 ? `سورة ${surahName(s)}` : `${surahName(s)} — من الآية ${ar(a)}`}</span>`;
+        }
+        prev = { s, a };
+        const n = ayahWords(g).length;
+        for (let i = 0; i < n; i++, idx++) html += `${wordHtml(idx)} `;
+        html += `${marker(g)} `;
       }
-      prev = { s, a };
-      const n = ayahWords(g).length;
-      for (let i = 0; i < n; i++, idx++) {
-        const wk = this.weak[`${g}:${i}`];
-        const mark = this.warnWeak && wk && !wk.mastered ? ' weak-mark' : '';
-        const shown = this.visible[idx];
-        html += `<span class="w ${shown ? 'shown' : 'hidden'}${mark}" data-i="${idx}"${shown ? '' : ' aria-hidden="true"'}>${this.words[idx].text}</span> `;
-      }
-      html += `<span class="ayah-end">﴿${ar(a)}﴾</span> `;
+      this.mushafEl.innerHTML = html;
     }
-    this.mushafEl.innerHTML = html;
     this.spans = [...this.mushafEl.querySelectorAll('.w')];
     this.prevStatus = this.matcher.status.map(() => null);
     this.paint();
@@ -260,6 +285,7 @@ export class Recitation {
     this.completed = true;
     this.listener?.stop();
     clearInterval(this.stallTimer);
+    this.unfit?.();
     document.removeEventListener('keydown', this.onKey);
   }
 }
