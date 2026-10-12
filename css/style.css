@@ -42,6 +42,7 @@
 
   /* الخطوط */
   --font-ui: 'Noto Kufi Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-read: 'Noto Naskh Arabic', 'Noto Kufi Arabic', serif; /* النصوص الطويلة (التفسير) */
   --font-quran: 'Amiri Quran', 'KFGQPC Uthmanic Script HAFS', 'Amiri', 'Traditional Arabic', serif;
   color-scheme: light;
 }
@@ -257,6 +258,13 @@ body.immersive main { padding-bottom: calc(150px + env(safe-area-inset-bottom));
 .alert > .ic { color: var(--warn); margin-top: 3px; }
 
 /* ================= الرئيسية ================= */
+.summary { padding: var(--s3) var(--s4) var(--s4); }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 calc(var(--s2) * -1) var(--s3); }
+.stats-row .stat { background: none; border: 0; border-radius: 0; padding: var(--s1) var(--s2); text-align: center; }
+.stats-row .stat + .stat { border-inline-start: 1px solid var(--line); }
+.stats-row .stat b { justify-content: center; font-size: 1.25rem; }
+.stats-row .stat span { display: block; font-size: .75rem; line-height: 1.5; }
+.summary .row { margin-bottom: var(--s2); }
 .stats { display: grid; gap: var(--s3); grid-template-columns: repeat(2, 1fr); margin-bottom: var(--s3); }
 .stats.three { grid-template-columns: repeat(3, 1fr); }
 @media (min-width: 640px) { .stats { grid-template-columns: repeat(4, 1fr); } }
@@ -283,7 +291,10 @@ body.immersive main { padding-bottom: calc(150px + env(safe-area-inset-bottom));
 .task-title { font-size: 1.0625rem; display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-bottom: 2px; }
 .task .range { font-weight: 700; margin: var(--s2) 0 0; }
 .task .empty { margin: var(--s2) 0 0; }
-.task.idle { box-shadow: none; background: transparent; }
+.task.idle { box-shadow: none; background: transparent; padding-block: var(--s3); }
+.task.idle .task-icon { opacity: .7; }
+.task.idle .body > .muted.small:not(.empty) { display: none; } /* البطاقة الفارغة: العنوان وسطر واحد */
+.task.idle .empty { margin: 0; }
 .task.done { border-color: color-mix(in srgb, var(--ok) 30%, var(--line)); }
 
 .mistake-list { list-style: none; padding: 0; margin: 0; }
@@ -367,8 +378,10 @@ body.immersive main { padding-bottom: calc(150px + env(safe-area-inset-bottom));
 .tip ol { margin: var(--s2) 0 var(--s2); padding-inline-start: var(--s5); }
 .tip li { margin-bottom: var(--s1); }
 
-.player { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
-.player p { margin: 0; flex-basis: 100%; }
+.player { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; padding: var(--s3); }
+.player p { margin: 0; flex-basis: 100%; display: flex; align-items: center; gap: var(--s1); }
+.player .btn { flex: 1; }
+.mushaf.study + .tip { margin-top: var(--s3); }
 .inline-field { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; }
 
 .legend { display: flex; gap: var(--s2) var(--s4); flex-wrap: wrap; font-size: .8125rem; color: var(--muted); margin: 0 0 var(--s3); padding: 0; list-style: none; }
@@ -729,19 +742,35 @@ button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary
 .w.playing { background: var(--primary-soft); border-radius: 4px; }
 
 .view-toggle {
-  display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 40px; padding: 0 12px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; min-height: var(--tap); min-width: var(--tap); padding: 0 12px;
   border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); color: var(--primary);
   font: 600 .8125rem var(--font-ui); cursor: pointer;
 }
-@media (max-width: 420px) { .view-toggle span { display: none; } .view-toggle { padding: 0 10px; } }
+@media (max-width: 420px) { .view-toggle span { display: none; } .view-toggle { padding: 0; border-radius: 50%; } }
 
-.reader-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2) var(--s3); max-width: 600px; margin: 0 auto var(--s3); }
-.reader-bar input { width: 4.5em; }
+.reader-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s1); padding: var(--s1); max-width: 600px; margin: 0 auto var(--s3); }
 .reader-bar select { flex: 1; min-width: 0; }
+.page-field { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .875rem; }
+.page-field input { width: 4.2em; text-align: center; }
+.page-head.compact { margin-bottom: var(--s3); }
+.page-head.compact h1 { margin-bottom: 0; }
 .reader-actions { max-width: 600px; margin: 0 auto; justify-content: center; }
 
-.ayah-q { font-family: var(--font-quran); font-size: 1.375rem; line-height: 2.1; margin: 0 0 var(--s2); }
-.tafsir { margin-top: var(--s3); }
-.tafsir h3 { margin: 0 0 var(--s2); }
-.tafsir p { line-height: 1.95; margin: 0 0 var(--s2); }
-.tafsir .source { margin-top: var(--s3); }
+.ayah-q { font-family: var(--font-quran); font-size: 1.5rem; line-height: 2.1; margin: 0 0 var(--s3); padding: var(--s2) var(--s3); background: var(--surface-2); border-radius: var(--radius-sm); }
+#sheet-title .muted { font-weight: 400; }
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0 var(--s4);
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--primary);
+  font: 600 .875rem var(--font-ui); cursor: pointer; transition: background var(--t-fast);
+}
+.pill:hover { background: var(--primary-soft); }
+.pill:active { background: var(--primary-soft); }
+.tafsir { margin-top: var(--s4); }
+.tafsir h3 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin: 0 0 var(--s2); color: var(--primary); font-size: 1rem; }
+.tafsir p { font-family: var(--font-read); font-size: 1.125rem; line-height: 2; margin: 0 0 var(--s3); max-width: 65ch; }
+.tafsir .qq { font-family: var(--font-quran); color: var(--primary); font-size: 1.05em; }
+.tafsir .source { font-family: var(--font-ui); font-size: .75rem; line-height: 1.6; margin-top: var(--s3); }
+.ayah-nav { display: flex; gap: var(--s2); margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.ayah-nav .btn { flex: 1; justify-content: center; }
+.ayah-nav .btn:disabled { opacity: .45; cursor: default; }

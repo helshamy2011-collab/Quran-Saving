@@ -1,6 +1,6 @@
 import {
   loadQuran, surahName, ayahCount, toGlobal, fromGlobal, ayahWords, ayahText,
-  describeAyahs, toArabicDigits, surahRangeLabel, describePosition, PAGES, pageAyahs, ayahPage,
+  describeAyahs, toArabicDigits, surahRangeLabel, describePosition, PAGES, pageAyahs, ayahPage, totalAyahs,
   similarOf, compareAyahs, confusionFor,
 } from './quran.js';
 import {
@@ -145,6 +145,11 @@ function renderHome() {
   };
 
   const pending = plan.tasks.filter((t) => t.ayahs.length && !t.done).length;
+  // المطلوب الآن أولاً، ثم ما تم، ثم البطاقات الفارغة
+  const rank = (t) => (!t.ayahs.length ? 2 : t.done ? 1 : 0);
+  const ordered = plan.tasks.map((t, i) => ({ t, i })).sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i).map((x) => x.t);
+  // الملخص يظهر بعد أول تقدم (أصفار كثيرة في البداية لا تفيد)
+  const started = s.ayahs > 0 || s.streak > 0 || s.weakActive > 0 || getState().sessions.length > 0;
 
   app.innerHTML = `
     <header class="page-head">
@@ -152,17 +157,17 @@ function renderHome() {
       <p class="muted">${pending ? `باقي لك ${ar(pending)} ${pending === 1 ? 'مهمة' : 'مهام'} اليوم` : 'أتممت ورد اليوم، بارك الله فيك'}</p>
     </header>
     ${weakTask.count ? `<div class="alert" role="note">${icon('bell')}<div><b>تذكير:</b> عندك <b>${ar(weakTask.count)}</b> كلمة أخطأت فيها أو نسيتها من قبل وحان وقت مراجعتها. ابدأ بها قبل أي شيء.</div></div>` : ''}
-    <div class="stats">
-      <div class="stat"><b>${ar(s.ayahs)}</b><span>آية محفوظة</span></div>
-      <div class="stat"><b>${ar(s.pages.toFixed(1))}</b><span>صفحة تقريباً</span></div>
-      <div class="stat"><b>${icon('flame', { size: 18, cls: 'flame' })}${ar(s.streak)}</b><span>يوم متتالٍ</span></div>
-      <div class="stat"><b>${ar(s.weakActive)}</b><span>نقطة ضعف تحت المتابعة</span></div>
-    </div>
-    <div class="card progress-card">
+    ${started ? `<section class="card summary" aria-label="ملخص التقدم">
+      <div class="stats-row">
+        <div class="stat"><b>${ar(s.ayahs)}</b><span>آية محفوظة</span></div>
+        <div class="stat"><b>${ar(s.pages.toFixed(1))}</b><span>صفحة</span></div>
+        <div class="stat"><b>${icon('flame', { size: 16, cls: 'flame' })}${ar(s.streak)}</b><span>يوم متتالٍ</span></div>
+        <div class="stat"><b>${ar(s.weakActive)}</b><span>نقطة ضعف</span></div>
+      </div>
       <div class="row small"><span>التقدم في حفظ القرآن</span><span class="spacer"></span><b>${ar(s.percent.toFixed(1))}٪</b></div>
       <div class="progress" role="progressbar" aria-label="التقدم في حفظ القرآن" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${s.percent.toFixed(1)}"><i style="width:${Math.min(100, s.percent)}%"></i></div>
-    </div>
-    ${plan.tasks.map(taskCard).join('')}
+    </section>` : ''}
+    ${ordered.map(taskCard).join('')}
     ${recentSessions()}
   `;
 
@@ -233,6 +238,14 @@ function renderStudy() {
       <div class="sub-title"><h1>الحفظ الجديد</h1><p class="muted small">${esc(describeAyahs(t.ayahs))} · ${describePosition(t.ayahs)}</p></div>
       ${viewToggle()}
     </div>
+    <div class="player card">
+      <button type="button" class="btn" data-act="play-all" id="play-all">${icon('play', { size: 16 })}<span>استمع للورد كله</span></button>
+      <label class="inline-field">تكرار
+        <select id="repeat" aria-label="تكرار كل آية">${[1, 3, 5, 10].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${ar(n)} ${n > 2 && n < 11 ? 'مرات' : 'مرة'}</option>`).join('')}</select>
+      </label>
+      <p class="muted small">${icon('headphones', { size: 14 })}${RECITERS[reciter] || reciter} · اضغط رقم الآية ﴿ ﴾ لتفسيرها أو سماعها وحدها</p>
+    </div>
+    <div class="mushaf study" id="mushaf"></div>
     <details class="card tip">
       <summary>${icon('info', { size: 18 })}طريقة الحفظ المقترحة</summary>
       <ol>
@@ -242,15 +255,6 @@ function renderStudy() {
         <li>اضغط «سمّع» — لازم تحقق ${ar(getState().settings.passMark)}٪ لاعتماد الحفظ.</li>
       </ol>
     </details>
-    <div class="player card">
-      <label class="inline-field">تكرار كل آية
-        <select id="repeat">${[1, 3, 5, 10].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${ar(n)} ${n > 2 && n < 11 ? 'مرات' : 'مرة'}</option>`).join('')}</select>
-      </label>
-      <button type="button" class="btn" data-act="play-all" id="play-all">${icon('play', { size: 16 })}<span>استمع للورد كله</span></button>
-      <p class="muted small">القارئ: ${RECITERS[reciter] || reciter}</p>
-    </div>
-    <p class="muted small helper">${icon('info', { size: 16 })}اضغط على رقم الآية ﴿ ﴾ للتفسير والاستماع لها.</p>
-    <div class="mushaf study" id="mushaf"></div>
     <div class="dock"><div class="inner">
       <p class="heard">لما تحس إنك حفظت، ابدأ التسميع والنص هيكون مخفي.</p>
       <button type="button" class="btn big" data-act="guided">${icon('sprout')}حفّظني</button>
@@ -577,35 +581,59 @@ function openCompare(g, onlyWith = null) {
   });
 }
 
-// نافذة الآية: التفسير الميسر، والاستماع، والمتشابهات
+// نافذة الآية: التفسير الميسر، والاستماع، والمتشابهات، والتنقل للآية السابقة والتالية
 // hideText: أثناء التسميع لا نعرض نص الآية حتى لا نكشف المخفي
 function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
-  const { s, a } = fromGlobal(g);
-  const sims = similarOf(g).filter((x) => !(x.score === 100 && fromGlobal(x.g).s === s));
-  const { el } = openSheet({
-    title: `${surahName(s)} — الآية ${ar(a)}`,
+  const { el, close } = openSheet({
+    title: '',
     iconName: 'book',
-    body: `${hideText ? '' : `<p class="q ayah-q">${ayahText(g)} <span class="ayah-end">﴿${ar(a)}﴾</span></p>`}
-      <div class="row actions">
-        ${onPlay ? `<button type="button" class="btn" data-play>${icon('play', { size: 16 })}استمع للآية</button>` : ''}
-        ${sims.length && !hideText ? `<button type="button" class="btn" data-sim>${icon('layers', { size: 16 })}متشابهة مع ${refOf(sims[0].g)}</button>` : ''}
-      </div>
-      <section class="tafsir" aria-live="polite"><h3>التفسير الميسر</h3><p class="muted">جارٍ التحميل…</p></section>`,
+    body: '<div class="ayah-body"></div>',
     onClose,
-    onClick: (e, close) => {
+    onClick: (e) => {
       if (e.target.closest('[data-play]')) { close(); onPlay(g); }
       if (e.target.closest('[data-sim]')) { close(); openCompare(g); }
+      const nav = e.target.closest('[data-go]');
+      if (nav) show(Number(nav.dataset.go));
     },
   });
-  const box = el.querySelector('.tafsir');
-  tafsirOf(g).then((t) => {
-    if (!t) { box.innerHTML = '<h3>التفسير الميسر</h3><p class="muted">لا يوجد تفسير لهذه الآية.</p>'; return; }
-    const range = t.from === t.to ? '' : ` <span class="muted small">(تفسير الآيات ${ar(t.from)}–${ar(t.to)} معاً)</span>`;
-    box.innerHTML = `<h3>التفسير الميسر${range}</h3>${t.text.split('\n').map((x) => `<p>${esc(x)}</p>`).join('')}
-      <p class="muted small source">التفسير الميسر — مجمع الملك فهد لطباعة المصحف الشريف</p>`;
-  }).catch(() => {
-    box.innerHTML = '<h3>التفسير الميسر</h3><p class="muted">تعذر تحميل التفسير — تأكد من الاتصال بالإنترنت وحاول مرة أخرى.</p>';
-  });
+  const titleEl = el.querySelector('#sheet-title');
+  const body = el.querySelector('.ayah-body');
+  // اقتباسات القرآن داخل التفسير ﴿…﴾ بخط المصحف
+  const tafsirHtml = (text) => text.split('\n')
+    .map((x) => `<p>${esc(x).replace(/﴿[^﴾]*﴾/g, (q) => `<span class="qq">${q}</span>`)}</p>`).join('');
+
+  function show(target) {
+    g = target;
+    const { s, a } = fromGlobal(g);
+    const sims = similarOf(g).filter((x) => !(x.score === 100 && fromGlobal(x.g).s === s));
+    titleEl.innerHTML = `${icon('book')}${surahName(s)} <span class="muted">· الآية ${ar(a)}</span>`;
+    const hasPrev = g > 0 && fromGlobal(g - 1).s === s;
+    const hasNext = g + 1 < totalAyahs() && fromGlobal(g + 1).s === s;
+    body.innerHTML = `${hideText ? '' : `<p class="q ayah-q">${ayahText(g)} <span class="ayah-end">﴿${ar(a)}﴾</span></p>`}
+      ${onPlay || (sims.length && !hideText) ? `<div class="chip-row">
+        ${onPlay ? `<button type="button" class="pill" data-play>${icon('play', { size: 16 })}استمع للآية</button>` : ''}
+        ${sims.length && !hideText ? `<button type="button" class="pill" data-sim>${icon('layers', { size: 16 })}متشابهة مع ${refOf(sims[0].g)}</button>` : ''}
+      </div>` : ''}
+      <section class="tafsir" aria-live="polite"><h3>التفسير الميسر</h3><p class="muted">جارٍ التحميل…</p></section>
+      <nav class="ayah-nav" aria-label="التنقل بين الآيات">
+        <button type="button" class="btn" data-go="${g - 1}" ${hasPrev ? '' : 'disabled'}>${icon('chevronR', { size: 18 })}الآية ${ar(a - 1 || 1)}</button>
+        <button type="button" class="btn" data-go="${g + 1}" ${hasNext ? '' : 'disabled'}>الآية ${ar(a + 1)}${icon('chevronL', { size: 18 })}</button>
+      </nav>`;
+    if (!hasPrev) body.querySelector('[data-go]').innerHTML = `${icon('chevronR', { size: 18 })}السابقة`;
+    if (!hasNext) body.querySelectorAll('[data-go]')[1].innerHTML = `التالية${icon('chevronL', { size: 18 })}`;
+    el.scrollTop = 0;
+    const box = body.querySelector('.tafsir');
+    tafsirOf(g).then((t) => {
+      if (t?.s !== s || g !== target) return;
+      const range = t.from === t.to ? '' : ` <span class="tag">الآيات ${ar(t.from)}–${ar(t.to)} معاً</span>`;
+      box.innerHTML = `<h3>التفسير الميسر${range}</h3>${tafsirHtml(t.text)}
+        <p class="muted small source">التفسير الميسر — مجمع الملك فهد لطباعة المصحف الشريف</p>`;
+    }).catch(() => {
+      if (g !== target) return;
+      box.innerHTML = '<h3>التفسير الميسر</h3><p class="muted">تعذر تحميل التفسير — تأكد من الاتصال بالإنترنت وحاول مرة أخرى.</p>';
+    });
+  }
+  show(g);
 }
 
 // أزواج المتشابهات التي حفظ المستخدم الآيتين فيها
@@ -766,14 +794,14 @@ function renderMushaf({ page } = {}) {
   let p = page || Number(localStorage.getItem('mushaf-page')) || 1;
   const reciter = getState().settings.reciter;
   app.innerHTML = `
-    <header class="page-head">
+    <header class="page-head compact">
       <h1>المصحف</h1>
-      <p class="muted">صفحات مصحف المدينة. اضغط على رقم الآية ﴿ ﴾ لتفسيرها (التفسير الميسر) أو الاستماع لها.</p>
+      <p class="muted small">اضغط رقم الآية ﴿ ﴾ لتفسيرها أو سماعها · اسحب الصفحة للتقليب</p>
     </header>
     <div class="reader-bar card">
       <button type="button" class="icon-btn" data-act="prev" aria-label="الصفحة السابقة">${icon('chevronR', { size: 22 })}</button>
-      <label class="inline-field">صفحة <input type="number" id="pg" min="1" max="${PAGES}" inputmode="numeric"></label>
-      <select id="ps" aria-label="انتقل إلى سورة">${surahOptions(0)}</select>
+      <select id="ps" aria-label="انتقل إلى سورة">${Array.from({ length: 114 }, (_, i) => `<option value="${i + 1}">سورة ${surahName(i + 1)}</option>`).join('')}</select>
+      <label class="page-field"><span>ص</span><input type="text" id="pg" inputmode="numeric" autocomplete="off" aria-label="رقم الصفحة من ${ar(PAGES)}"></label>
       <button type="button" class="icon-btn" data-act="next" aria-label="الصفحة التالية">${icon('chevronL', { size: 22 })}</button>
     </div>
     <div class="mushaf paged reader" id="mushaf"></div>
@@ -793,7 +821,7 @@ function renderMushaf({ page } = {}) {
   const show = (n) => {
     n = Math.min(PAGES, Math.max(1, n));
     // ترك حقل الرقم يطلق change مرة أخرى؛ إعادة الرسم وقتها تضيّع الضغطة على رقم الآية
-    if (n === p && el.childElementCount) { pg.value = p; return; }
+    if (n === p && el.childElementCount) { pg.value = ar(p); return; }
     stop();
     p = n;
     localStorage.setItem('mushaf-page', String(p));
@@ -801,7 +829,7 @@ function renderMushaf({ page } = {}) {
     el.innerHTML = renderPages(list, { word: (i, w, g) => `<span class="w" data-g="${g}">${w.text}</span>` });
     unfit?.();
     unfit = autoFit(el);
-    pg.value = p;
+    pg.value = ar(p);
     ps.value = String(fromGlobal(list[0]).s);
   };
   const play = (g) => {
@@ -815,7 +843,9 @@ function renderMushaf({ page } = {}) {
     audioEl.play().catch(() => {});
   };
   show(p);
-  pg.onchange = () => show(Number(pg.value) || 1);
+  // يقبل الأرقام العربية والإنجليزية
+  pg.onchange = () => show(Number(pg.value.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '')) || p);
+  pg.onfocus = () => pg.select();
   ps.onchange = () => show(ayahPage(toGlobal(Number(ps.value), 1)));
   app.onclick = (e) => {
     const mark = e.target.closest('[data-ayah]');
