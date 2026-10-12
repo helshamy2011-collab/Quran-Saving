@@ -1,5 +1,5 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v14';
+const CACHE = 'hifz-v15'; // نفس APP_VERSION في js/app.js
 const ASSETS = [
   './',
   'index.html',
@@ -23,7 +23,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' حتى لا نحفظ نسخة قديمة من ذاكرة المتصفح
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -42,8 +43,10 @@ self.addEventListener('fetch', (e) => {
   const sameOrigin = url.origin === self.location.origin;
   const isFont = url.hostname.endsWith('fonts.googleapis.com') || url.hostname.endsWith('fonts.gstatic.com');
   if (!sameOrigin && !isFont) return;
+  // ملفات البرنامج نسأل عنها الموقع كل مرة (no-cache) بدل نسخة المتصفح، حتى يظهر التحديث فوراً
+  const req = sameOrigin ? fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(e.request);
   e.respondWith(
-    fetch(e.request)
+    req
       .then((res) => {
         if (res.ok || res.type === 'opaque') {
           const copy = res.clone();

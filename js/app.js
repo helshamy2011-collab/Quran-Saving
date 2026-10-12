@@ -15,6 +15,10 @@ import { icon } from './icons.js';
 import { renderGuided } from './guided.js';
 import { renderPages, autoFit, getView, setView, tafsirOf } from './mushaf.js';
 
+// رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
+export const APP_VERSION = 15;
+let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
+
 const app = document.getElementById('app');
 const tabs = document.getElementById('tabs');
 let cleanup = null;
@@ -46,6 +50,7 @@ function toast(msg, ms = 2600) {
 const TAB_VIEWS = ['home', 'mushaf', 'weak', 'free', 'plan', 'people', 'similar'];
 
 function go(view, params = {}, { push = true } = {}) {
+  if (reloadPending && TAB_VIEWS.includes(view)) { location.hash = view; location.reload(); return; }
   if (cleanup) { cleanup(); cleanup = null; }
   app.onsubmit = null;
   const tab = TAB_VIEWS.includes(view) ? view : null;
@@ -1196,6 +1201,7 @@ function renderPlan({ welcome = false } = {}) {
         <button type="button" class="btn ghost danger" data-act="reset">${icon('trash', { size: 18 })}ابدأ من الأول (${esc(activeProfile().name)})</button>
         <div id="reset-confirm" hidden></div>
       </div>
+      <p class="muted small version">الإصدار ${ar(APP_VERSION)}</p>
     </section>`}
   `;
 
@@ -1360,7 +1366,17 @@ async function boot() {
     return;
   }
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // التحديثات توصل لوحدها: نفحص عند فتح البرنامج والرجوع له، ونعيد التحميل مرة لما يجهز الإصدار الجديد
+    let hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) { hadController = true; return; } // أول تثبيت، ليس تحديثاً
+      // لا نقطع التسميع أو الحفظ؛ نعيد التحميل عند الرجوع لأي تبويب
+      if (document.body.classList.contains('immersive')) reloadPending = true;
+      else location.reload();
+    });
   }
   for (const el of document.querySelectorAll('[data-icon]')) el.outerHTML = icon(el.dataset.icon, { size: 22 });
   // فتح البرنامج على رابط شاشة معينة (#weak مثلاً)
