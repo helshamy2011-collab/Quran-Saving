@@ -13,10 +13,13 @@ import { speechSupported } from './speech.js';
 import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
 import { icon } from './icons.js';
 import { renderGuided } from './guided.js';
-import { renderPages, autoFit, getView, setView, tafsirOf } from './mushaf.js';
+import { renderQuiz } from './quiz.js';
+import { renderPages, autoFit, getView, setView, tafsirOf, gharibOf } from './mushaf.js';
+import { voiceFix } from './voicefix.js';
+import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 15;
+export const APP_VERSION = 16;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -63,7 +66,7 @@ function go(view, params = {}, { push = true } = {}) {
   document.body.dataset.view = view;
   if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
-  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar, mushaf: renderMushaf };
+  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar, mushaf: renderMushaf, quiz: renderQuizView };
   views[view](params);
   refreshBadge();
   refreshProfileButton();
@@ -154,6 +157,7 @@ function renderHome() {
   const rank = (t) => (!t.ayahs.length ? 2 : t.done ? 1 : 0);
   const ordered = plan.tasks.map((t, i) => ({ t, i })).sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i).map((x) => x.t);
   // الملخص يظهر بعد أول تقدم (أصفار كثيرة في البداية لا تفيد)
+  const known = memorizedSet();
   const started = s.ayahs > 0 || s.streak > 0 || s.weakActive > 0 || getState().sessions.length > 0;
 
   app.innerHTML = `
@@ -173,6 +177,17 @@ function renderHome() {
       <div class="progress" role="progressbar" aria-label="التقدم في حفظ القرآن" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${s.percent.toFixed(1)}"><i style="width:${Math.min(100, s.percent)}%"></i></div>
     </section>` : ''}
     ${ordered.map(taskCard).join('')}
+    ${known.size >= 3 ? `<section class="card task quiz-card" aria-label="اختبر حفظك">
+      <div class="task-icon quiz">${icon('target', { size: 22 })}</div>
+      <div class="body">
+        <h2 class="task-title">اختبر حفظك</h2>
+        <p class="muted small">أسئلة سريعة من كل محفوظك (${ar(known.size)} آية)</p>
+        <div class="row actions">
+          <button type="button" class="btn" data-act="quiz" data-mode="continue">${icon('mic')}كمّل الآية</button>
+          <button type="button" class="btn" data-act="quiz" data-mode="link">${icon('book')}ربط الصفحات</button>
+        </div>
+      </div>
+    </section>` : ''}
     ${recentSessions()}
   `;
 
@@ -181,6 +196,7 @@ function renderHome() {
     if (!b) return;
     if (b.dataset.act === 'study') go('study');
     if (b.dataset.act === 'guided') go('guided');
+    if (b.dataset.act === 'quiz') go('quiz', { pool: [...known], mode: b.dataset.mode, label: 'محفوظك', returnTo: 'home' });
     if (b.dataset.act === 'recite') {
       const t = plan.tasks.find((x) => x.id === b.dataset.task);
       go('recite', { taskId: t.id, label: t.title, ayahs: t.ayahs });
@@ -220,7 +236,7 @@ function renderStudy() {
   const reciter = getState().settings.reciter;
   const studyWord = (w, g, i) => {
     const wk = weak[`${g}:${i}`];
-    return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}" data-g="${g}">${w.text}</span>`;
+    return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}" data-g="${g}" data-k="${i}">${w.text}</span>`;
   };
   const mushafHtml = () => {
     if (getView() === 'pages') return renderPages(t.ayahs, { word: (idx, w, g, k) => studyWord(w, g, k) });
@@ -248,7 +264,7 @@ function renderStudy() {
       <label class="inline-field">تكرار
         <select id="repeat" aria-label="تكرار كل آية">${[1, 3, 5, 10].map((n) => `<option value="${n}" ${n === 3 ? 'selected' : ''}>${ar(n)} ${n > 2 && n < 11 ? 'مرات' : 'مرة'}</option>`).join('')}</select>
       </label>
-      <p class="muted small">${icon('headphones', { size: 14 })}${RECITERS[reciter] || reciter} · اضغط رقم الآية ﴿ ﴾ لتفسيرها أو سماعها وحدها</p>
+      <p class="muted small">${icon('headphones', { size: 14 })}${RECITERS[reciter] || reciter} · اضغط على كلمة لمعناها، وعلى رقم الآية ﴿ ﴾ لتفسيرها</p>
     </div>
     <div class="mushaf study" id="mushaf"></div>
     <details class="card tip">
@@ -323,6 +339,11 @@ function renderStudy() {
     if (sim) return openCompare(Number(sim.dataset.sim));
     const mark = e.target.closest('[data-ayah]');
     if (mark) return openAyah(Number(mark.dataset.ayah), { onPlay: (g) => playQueue([g]) });
+    const word = e.target.closest('#mushaf .w[data-k]');
+    if (word) {
+      const g = Number(word.dataset.g);
+      return openWord(g, Number(word.dataset.k), { mark: marker(mushafEl, g), onAyah: (x) => openAyah(x, { onPlay: (y) => playQueue([y]) }) });
+    }
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
@@ -350,6 +371,12 @@ function renderGuidedView({ ayahs, label, returnTo = 'home' } = {}) {
       ? { taskId: 'new', label: 'الحفظ الجديد', ayahs }
       : { taskId: 'free', label: label || 'تسميع حر', ayahs, returnTo }),
   }, { ayahs, label: label || 'حفّظني' });
+}
+
+// ================= كمّل الآية / ربط الصفحات =================
+function renderQuizView(params = {}) {
+  if (!params.pool?.length) { go('home', {}, { push: false }); return; }
+  renderQuiz({ app, toast, go, back: (to) => back(to), setCleanup: (fn) => { cleanup = fn; } }, params);
 }
 
 // ================= شاشة التسميع =================
@@ -405,7 +432,9 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
     onFinishRequest: () => {
       if (rec.matcher.pos === 0 || confirm('إنهاء التسميع الآن؟ سيتم حفظ ما سمّعته حتى الآن.')) finish();
     },
+    onMistake: (list) => fixer.onMistake(list),
   });
+  const fixer = voiceFix(rec, { enabled: () => getState().settings.voiceFix, reciter: () => getState().settings.reciter });
   rec.load({ ayahs, visible: () => reading, reading });
   const words = rec.words;
   let finished = false;
@@ -497,7 +526,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
     if (b.dataset.act === 'back') back(returnTo);
     if (b.dataset.act === 'view') { rec.setLayout(toggleView()); b.outerHTML = viewToggle(); }
   };
-  cleanup = () => { finished = true; rec.destroy(); };
+  cleanup = () => { finished = true; fixer.stop(); rec.destroy(); };
 }
 
 // سطر في قائمة الأخطاء: الكلمة في سياقها
@@ -604,8 +633,9 @@ function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
   const titleEl = el.querySelector('#sheet-title');
   const body = el.querySelector('.ayah-body');
   // اقتباسات القرآن داخل التفسير ﴿…﴾ بخط المصحف
+  // أثناء التسميع نخفي الاقتباسات حتى لا تنكشف الكلمات المخفية
   const tafsirHtml = (text) => text.split('\n')
-    .map((x) => `<p>${esc(x).replace(/﴿[^﴾]*﴾/g, (q) => `<span class="qq">${q}</span>`)}</p>`).join('');
+    .map((x) => `<p>${esc(x).replace(/﴿[^﴾]*﴾/g, (q) => `<span class="qq">${hideText ? '﴿…﴾' : q}</span>`)}</p>`).join('');
 
   function show(target) {
     g = target;
@@ -633,12 +663,63 @@ function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
       const range = t.from === t.to ? '' : ` <span class="tag">الآيات ${ar(t.from)}–${ar(t.to)} معاً</span>`;
       box.innerHTML = `<h3>التفسير الميسر${range}</h3>${tafsirHtml(t.text)}
         <p class="muted small source">التفسير الميسر — مجمع الملك فهد لطباعة المصحف الشريف</p>`;
+      gharibOf(target).then((list) => {
+        if (hideText || !list.length || g !== target || !box.isConnected) return;
+        box.insertAdjacentHTML('afterend', `<section class="tafsir meanings"><h3>معاني الكلمات</h3>
+          ${list.map((x) => `<p><span class="qq">﴿${esc(x.phrase)}﴾</span> ${esc(x.meaning)}</p>`).join('')}</section>`);
+      }).catch(() => {});
     }).catch(() => {
       if (g !== target) return;
       box.innerHTML = '<h3>التفسير الميسر</h3><p class="muted">تعذر تحميل التفسير — تأكد من الاتصال بالإنترنت وحاول مرة أخرى.</p>';
     });
   }
   show(g);
+}
+
+// نافذة الكلمة: معناها من «الميسر في غريب القرآن»، ومعاني باقي كلمات الآية
+// mark(from, to): يميّز الكلمات في الصفحة (ويُلغى التمييز عند الإغلاق)
+function openWord(g, k, { mark, onAyah } = {}) {
+  const { s, a } = fromGlobal(g);
+  const words = ayahWords(g);
+  const player = new Player();
+  const { el, close } = openSheet({
+    title: `معنى الكلمة <span class="muted">· ${surahName(s)} ${ar(a)}</span>`,
+    iconName: 'book',
+    body: `<div class="word-body"><p class="muted">جارٍ التحميل…</p></div>`,
+    onClose: () => { player.stop(); mark?.(null); },
+    onClick: (e) => {
+      if (e.target.closest('[data-say]')) player.play([{ urls: [wordUrl(g, k), ayahUrl(g, getState().settings.reciter)] }]);
+      if (e.target.closest('[data-ayah-tafsir]')) { close(); onAyah?.(g); }
+    },
+  });
+  const body = el.querySelector('.word-body');
+  const meaningHtml = (x) => `<span class="qq">﴿${esc(x.phrase)}﴾</span> ${esc(x.meaning)}`;
+  gharibOf(g).then((list) => {
+    const hit = list.find((x) => k >= x.from && k <= x.to);
+    mark?.(hit ? [hit.from, hit.to] : [k, k]);
+    const others = list.filter((x) => x !== hit);
+    body.innerHTML = `
+      <p class="word-q">${hit ? esc(hit.phrase) : words[k].text}</p>
+      ${hit ? `<p class="word-meaning">${esc(hit.meaning)}</p>`
+        : '<p class="muted">الكلمة دي معناها واضح، ومش مشروحة في «الميسر في غريب القرآن». شوف تفسير الآية كاملة.</p>'}
+      <div class="chip-row">
+        <button type="button" class="pill" data-say>${icon('play', { size: 16 })}استمع للكلمة</button>
+        ${onAyah ? `<button type="button" class="pill" data-ayah-tafsir>${icon('book', { size: 16 })}تفسير الآية</button>` : ''}
+      </div>
+      ${others.length ? `<section class="tafsir"><h3>معاني كلمات تانية في الآية</h3>${others.map((x) => `<p>${meaningHtml(x)}</p>`).join('')}</section>` : ''}
+      <p class="muted small source">الميسر في غريب القرآن — مجمع الملك فهد لطباعة المصحف الشريف</p>`;
+  }).catch(() => {
+    body.innerHTML = '<p class="muted">تعذر تحميل معنى الكلمة — تأكد من الاتصال بالإنترنت وحاول مرة أخرى.</p>';
+  });
+}
+
+// يميّز كلمات آية في الصفحة (لنافذة معنى الكلمة)
+function marker(root, g) {
+  return (range) => {
+    root.querySelectorAll('.w.picked').forEach((w) => w.classList.remove('picked'));
+    if (!range) return;
+    for (let k = range[0]; k <= range[1]; k++) root.querySelector(`.w[data-g="${g}"][data-k="${k}"]`)?.classList.add('picked');
+  };
 }
 
 // أزواج المتشابهات التي حفظ المستخدم الآيتين فيها
@@ -801,7 +882,7 @@ function renderMushaf({ page } = {}) {
   app.innerHTML = `
     <header class="page-head compact">
       <h1>المصحف</h1>
-      <p class="muted small">اضغط رقم الآية ﴿ ﴾ لتفسيرها أو سماعها · اسحب الصفحة للتقليب</p>
+      <p class="muted small">اضغط على كلمة لمعناها، وعلى رقم الآية ﴿ ﴾ لتفسيرها · اسحب الصفحة للتقليب</p>
     </header>
     <div class="reader-bar card">
       <button type="button" class="icon-btn" data-act="prev" aria-label="الصفحة السابقة">${icon('chevronR', { size: 22 })}</button>
@@ -831,7 +912,7 @@ function renderMushaf({ page } = {}) {
     p = n;
     localStorage.setItem('mushaf-page', String(p));
     const list = pageAyahs(p);
-    el.innerHTML = renderPages(list, { word: (i, w, g) => `<span class="w" data-g="${g}">${w.text}</span>` });
+    el.innerHTML = renderPages(list, { word: (i, w, g, k) => `<span class="w" data-g="${g}" data-k="${k}">${w.text}</span>` });
     unfit?.();
     unfit = autoFit(el);
     pg.value = ar(p);
@@ -855,6 +936,11 @@ function renderMushaf({ page } = {}) {
   app.onclick = (e) => {
     const mark = e.target.closest('[data-ayah]');
     if (mark) return openAyah(Number(mark.dataset.ayah), { onPlay: play });
+    const word = e.target.closest('#mushaf .w[data-k]');
+    if (word) {
+      const g = Number(word.dataset.g);
+      return openWord(g, Number(word.dataset.k), { mark: marker(el, g), onAyah: (x) => openAyah(x, { onPlay: play }) });
+    }
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
@@ -916,7 +1002,15 @@ function renderFree() {
         <button type="submit" class="btn primary big">${icon('mic')}ابدأ</button>
         <button type="button" class="btn" id="fall">السورة كاملة</button>
       </div>
-    </form>`;
+    </form>
+    <section class="card quiz-free">
+      <h2>${icon('target', { size: 20 })}اختبر نفسك في المقطع ده</h2>
+      <p class="muted small"><b>كمّل الآية:</b> تسمع أول كلمات آية وتكمّلها. <b>ربط الصفحات:</b> تسمع آخر آية في صفحة وتقول أول آية في اللي بعدها.</p>
+      <div class="row actions">
+        <button type="button" class="btn" data-quiz="continue">${icon('mic')}كمّل الآية</button>
+        <button type="button" class="btn" data-quiz="link">${icon('book')}ربط الصفحات</button>
+      </div>
+    </section>`;
   const fs = document.getElementById('fs');
   const ff = document.getElementById('ff');
   const ft = document.getElementById('ft');
@@ -941,20 +1035,30 @@ function renderFree() {
   fs.onchange = () => { ff.value = 1; ft.value = ayahCount(Number(fs.value)); clamp(); };
   document.getElementById('fall').onclick = () => { ff.value = 1; ft.value = ayahCount(Number(fs.value)); };
   clamp();
-  document.getElementById('free-form').onsubmit = (e) => {
-    e.preventDefault();
+  // المقطع المختار: السورة والآيات
+  const range = () => {
     const s = Number(fs.value);
     let from = Math.max(1, Number(ff.value) || 1);
     let to = Math.min(ayahCount(s), Number(ft.value) || from);
     if (to < from) [from, to] = [to, from];
-    const mode = form.mode.value;
-    localStorage.setItem('free-last', JSON.stringify({ s, from, to, mode }));
     const ayahs = [];
     for (let a = from; a <= to; a++) ayahs.push(toGlobal(s, a));
+    return { s, from, to, ayahs };
+  };
+  document.getElementById('free-form').onsubmit = (e) => {
+    e.preventDefault();
+    const { s, from, to, ayahs } = range();
+    const mode = form.mode.value;
+    localStorage.setItem('free-last', JSON.stringify({ s, from, to, mode }));
     if (mode === 'guided') go('guided', { ayahs, label: `حفّظني — ${surahName(s)}`, returnTo: 'free' });
     else go('recite', { taskId: 'free', label: mode === 'reading' ? 'قراءة بالنظر' : 'تسميع حر', ayahs, returnTo: 'free', reading: mode === 'reading' });
   };
-  app.onclick = null;
+  app.onclick = (e) => {
+    const q = e.target.closest('[data-quiz]');
+    if (!q) return;
+    const { s, ayahs } = range();
+    go('quiz', { pool: ayahs, mode: q.dataset.quiz, label: surahName(s), returnTo: 'free' });
+  };
 }
 
 // ================= الأشخاص وملف الحفظ =================
@@ -1178,6 +1282,8 @@ function renderPlan({ welcome = false } = {}) {
         </div>
         <label class="switch"><input type="checkbox" name="warnWeak" ${s.warnWeak ? 'checked' : ''}><span class="track" aria-hidden="true"></span>
           <span>نبّهني على مواضع أخطائي السابقة وقت التسميع<small class="muted">خط برتقالي تحت الكلمة المخفية</small></span></label>
+        <label class="switch"><input type="checkbox" name="voiceFix" ${s.voiceFix ? 'checked' : ''}><span class="track" aria-hidden="true"></span>
+          <span>صحّحني بالصوت<small class="muted">لما تغلط في كلمة أو تنساها، القارئ يقولها لك صح على طول</small></span></label>
         <label class="switch"><input type="checkbox" name="reminders" ${s.reminders ? 'checked' : ''}><span class="track" aria-hidden="true"></span>
           <span>ذكّرني يومياً<small class="muted">إشعار والبرنامج مفتوح أو مثبّت على الشاشة الرئيسية</small></span></label>
         <div class="field-row">
@@ -1223,6 +1329,7 @@ function renderPlan({ welcome = false } = {}) {
       lang: fd.get('lang'),
       reciter: fd.get('reciter'),
       warnWeak: fd.get('warnWeak') === 'on',
+      voiceFix: fd.get('voiceFix') === 'on',
       reminders: fd.get('reminders') === 'on',
       reminderTime: fd.get('reminderTime') || '20:00',
     };

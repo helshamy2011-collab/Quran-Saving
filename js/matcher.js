@@ -10,6 +10,7 @@ export const STATUS = {
   WRONG: 'wrong',         // قال كلمة أخرى مكانها
   SKIPPED: 'skipped',     // أسقطها وأكمل بعدها
   HINT: 'hint',           // نسيها وطلب تلميحاً
+  GIVEN: 'given',         // بداية السؤال في «كمّل الآية»: ظاهرة ولا تُحسب في النتيجة
   UNSURE: 'unsure',       // لم تُسمع بوضوح (كلمة قصيرة أسقطها التعرف الصوتي، أو ضاعت أثناء إعادة تشغيل الميكروفون) — لا تُحسب خطأ
 };
 
@@ -251,7 +252,7 @@ export class Matcher {
     // مكانها كلمة قرآنية أخرى (ربي بدل برب)، أو أسقط ٣ كلمات فأكثر. أما كلمة أو كلمتان سقطتا أو
     // تشوشتا بكلام ليس من القرآن فـ"لم تُسمع بوضوح"
     const garbled = this.missStreak > 0;
-    const clearWrong = garbled && this.missHeard.some((h) => isWawFaVariant(h, this.words[p]) || (h.length >= 3 && isQuranWord(h)));
+    const clearWrong = this.saidOther(p);
     const unsure = k <= 2 && !clearWrong;
     for (let j = 0; j < k; j++) this.set(p + j, unsure ? STATUS.UNSURE : garbled && j === 0 ? STATUS.WRONG : STATUS.SKIPPED);
     this.afterGap = false;
@@ -265,9 +266,22 @@ export class Matcher {
 
   // المستخدم أنهى التسميع والكلمات الأخيرة (كلمة أو كلمتان) لم تصل من التعرف الصوتي:
   // غالباً قالها والتعرف توقف قبل كتابتها
+  // دليل واضح إن المستخدم قال كلمة تانية مكان الكلمة p: واو/فاء زائدة أو ناقصة، أو كلمة قرآنية أخرى
+  saidOther(p) {
+    return this.missStreak > 0 && this.missHeard.some((h) => isWawFaVariant(h, this.words[p]) || (h.length >= 3 && isQuranWord(h)));
+  }
+
   finishTail(max = 2) {
     const left = this.words.length - this.pos;
     if (left <= 0 || left > max || this.pos === 0) return false;
+    // قال كلمة تانية مكان أول كلمة باقية (ومفيش بعدها حاجة تأكد): خطأ، والباقي لم يُسمع بوضوح
+    if (this.saidOther(this.pos)) {
+      this.set(this.pos, STATUS.WRONG);
+      this.heardAt[this.pos] = this.missHeard.join(' ');
+      this.pos++;
+      this.missStreak = 0;
+      this.missHeard = [];
+    }
     for (let i = this.pos; i < this.words.length; i++) this.set(i, STATUS.UNSURE);
     this.pos = this.words.length;
     return true;
@@ -292,14 +306,21 @@ export class Matcher {
   }
 
   // تصحيح يدوي من المستخدم: الضغط على كلمة مكشوفة يبدّل بين صح وخطأ
+  // أول k كلمات معطاة (بداية السؤال): لا تُقرأ ولا تُحسب
+  give(k) {
+    for (let i = 0; i < k && i < this.words.length; i++) this.status[i] = STATUS.GIVEN;
+    this.pos = Math.max(this.pos, Math.min(k, this.words.length));
+  }
+
   toggle(i) {
-    if (i >= this.pos) return;
+    if (i >= this.pos || this.status[i] === STATUS.GIVEN) return;
     this.status[i] = isMistake(this.status[i]) ? STATUS.OK : STATUS.WRONG;
   }
 
   score() {
-    const n = this.words.length;
-    const done = Math.min(this.pos, n);
+    const given = this.status.filter((x) => x === STATUS.GIVEN).length;
+    const n = this.words.length - given;
+    const done = Math.min(this.pos, this.words.length) - given;
     const mistakes = this.status.filter(isMistake).length;
     return { total: n, done, mistakes, accuracy: done ? Math.round(((done - mistakes) / done) * 100) : 0 };
   }

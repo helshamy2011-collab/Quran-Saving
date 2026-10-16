@@ -28,9 +28,10 @@ export class Recitation {
    * mushafEl: حاوية النص — dockEl: حاوية شريط التحكم
    * onUpdate(score) بعد كل تغيير — onComplete() عند آخر كلمة — onFinishRequest() زر الإنهاء
    */
-  constructor({ mushafEl, dockEl, lang, weak = {}, warnWeak = true, onUpdate, onComplete, onFinishRequest, onError, onAyah, finishLabel = 'إنهاء التسميع' }) {
-    Object.assign(this, { mushafEl, dockEl, weak, warnWeak, onUpdate, onComplete, onFinishRequest, onError, onAyah });
-    this.layout = getView();
+  // onMistake(indices): كلمات صارت للتو خطأ أو سقطت أو «نسيتها» (لتصحيحها بالصوت)
+  constructor({ mushafEl, dockEl, lang, weak = {}, warnWeak = true, onUpdate, onComplete, onFinishRequest, onError, onAyah, onMistake, layout = null, finishLabel = 'إنهاء التسميع' }) {
+    Object.assign(this, { mushafEl, dockEl, weak, warnWeak, onUpdate, onComplete, onFinishRequest, onError, onAyah, onMistake });
+    this.layout = layout || getView();
     this.manual = !speechSupported;
     this.active = true;
     this.completed = false;
@@ -100,10 +101,12 @@ export class Recitation {
 
   // تحميل مقطع جديد (الاستماع يستمر لو كان شغالاً)
   // visible(i, word): هل الكلمة ظاهرة قبل قراءتها؟
-  load({ ayahs, visible = () => false, reading = false }) {
+  // given: أول كذا كلمة معطاة كبداية سؤال («كمّل الآية»)
+  load({ ayahs, visible = () => false, reading = false, given = 0 }) {
     this.ayahs = ayahs;
     this.words = wordsOf(ayahs);
     this.matcher = new Matcher(this.words);
+    if (given) this.matcher.give(given);
     this.visible = this.words.map((w, i) => visible(i, w));
     this.completed = false;
     this.consumed.clear();
@@ -178,7 +181,10 @@ export class Recitation {
       if (r.bottom > window.innerHeight - 160 || r.top < 120) cur.scrollIntoView({ block: 'center', behavior: reduceMotion() ? 'auto' : 'smooth' });
     }
     if (m.status.some((x, i) => x !== this.prevStatus[i])) this.lastProgress = Date.now();
+    const fresh = m.status.map((x, i) => i).filter((i) => this.prevStatus[i] === STATUS.HIDDEN
+      && (m.status[i] === STATUS.WRONG || m.status[i] === STATUS.SKIPPED || m.status[i] === STATUS.HINT));
     this.prevStatus = m.status.slice();
+    if (fresh.length) this.onMistake?.(fresh);
     this.hintBtn.classList.remove('nudge');
     this.onUpdate?.(m.score());
     if (m.done && !this.completed) {
@@ -264,7 +270,7 @@ export class Recitation {
 
   resume() {
     this.paused = false;
-    if (this.resumeAfter && this.listener && !this.listener.active) { this.listener.start(); this.lastProgress = Date.now(); }
+    if (this.active && this.resumeAfter && this.listener && !this.listener.active) { this.listener.start(); this.lastProgress = Date.now(); }
     this.resumeAfter = false;
     this.syncMic();
   }

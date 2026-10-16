@@ -273,3 +273,27 @@ test('نتيجة مؤقتة تعيد ما قُرئ قبلها (آيفون): ال
   assert.equal(m2.status[7], STATUS.OK);
   assert.equal(m2.score().mistakes, 0);
 });
+
+test('التصحيح بالصوت: سماع الكلمة الصح من السماعة بعد «نسيتها» لا يُحسب خطأ إضافياً', () => {
+  const m = new Matcher(words(114, 1, 3));
+  say(m, 'قل أعوذ برب الناس ملك الناس');
+  m.hint(); // نسي «إله» — القارئ يقولها والميكروفون شغال
+  say(m, 'إله الناس'); // الميكروفون سمع «إله» من السماعة ثم المستخدم كمّل
+  assert.ok(m.done, m.status.join(','));
+  assert.equal(m.score().mistakes, 1); // «نسيتها» فقط
+});
+
+test('آخر كلمة: كلمة قرآنية تانية مكانها تُحسب خطأ عند الإنهاء، والتشويش يبقى «لم تُسمع بوضوح»', () => {
+  const m = new Matcher(words(112, 1, 1)); // قل هو الله أحد
+  say(m, 'قل هو الله الناس');
+  assert.ok(m.finishTail(2));
+  assert.equal(m.status[3], STATUS.WRONG);
+  const m2 = new Matcher(words(112, 1, 1));
+  say(m2, 'قل هو الله يشل');
+  assert.ok(m2.finishTail(2));
+  assert.equal(m2.status[3], STATUS.UNSURE);
+  const m3 = new Matcher(words(112, 1, 1));
+  say(m3, 'قل هو الله');
+  assert.ok(m3.finishTail(2));
+  assert.equal(m3.status[3], STATUS.UNSURE);
+});

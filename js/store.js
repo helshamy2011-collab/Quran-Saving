@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   prior: [],              // سور محفوظة من قبل (تدخل في المراجعة)
   lang: 'ar-SA',
   warnWeak: true,         // تمييز مواضع الأخطاء السابقة أثناء التسميع
+  voiceFix: true,         // القارئ يقول الكلمة صح لما تغلط فيها أو تنساها
   reminderTime: '20:00',
   reminders: false,
   reciter: 'Husary_128kbps',

@@ -7,6 +7,7 @@ import { recordPractice } from './plan.js';
 import { isMistake } from './matcher.js';
 import { Recitation } from './recitation.js';
 import { icon } from './icons.js';
+import { voiceFix } from './voicefix.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const keyOf = (w) => `${w.g}:${w.w}`;
@@ -77,7 +78,9 @@ export function renderGuided(ctx, { ayahs, label = 'حفّظني' }) {
     onError: (msg) => toast(msg, 5000),
     onComplete: () => stageDone(),
     onFinishRequest: () => { if (rec.matcher.pos > 0) stageDone(); },
+    onMistake: (list) => fixer.onMistake(list),
   });
+  const fixer = voiceFix(rec, { enabled: () => getState().settings.voiceFix, reciter: () => getState().settings.reciter });
 
   const current = () => stagesFor(k, ayahs[k])[stageIdx];
 
@@ -104,6 +107,7 @@ export function renderGuided(ctx, { ayahs, label = 'حفّظني' }) {
   function startStage() {
     clearTimer();
     stopAudio();
+    fixer.stop();
     const s = current();
     const g = ayahs[k];
     renderStepper();
@@ -335,6 +339,6 @@ export function renderGuided(ctx, { ayahs, label = 'حفّظني' }) {
     if (act === 'final') onFinal();
   };
 
-  setCleanup(() => { clearTimer(); stopAudio(); rec.destroy(); });
+  setCleanup(() => { clearTimer(); stopAudio(); fixer.stop(); rec.destroy(); });
   startStage();
 }

@@ -137,3 +137,18 @@ export async function tafsirOf(g) {
   const hit = groups.find(([from, to]) => a >= from && a <= to);
   return hit ? { s, from: hit[0], to: hit[1], text: hit[2] } : null;
 }
+
+// ---------- معاني الكلمات (الميسر في غريب القرآن) ----------
+const gharibCache = new Map();
+
+// [{ from, to, phrase, meaning }] لكلمات الآية (from/to أرقام الكلمات من 0)
+export async function gharibOf(g) {
+  const { s, a } = fromGlobal(g);
+  if (!gharibCache.has(s)) {
+    gharibCache.set(s, fetch(`data/gharib/${String(s).padStart(3, '0')}.json`)
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .catch((e) => { gharibCache.delete(s); throw e; }));
+  }
+  const data = await gharibCache.get(s);
+  return (data[a] || []).map(([from, to, phrase, meaning]) => ({ from, to, phrase, meaning }));
+}

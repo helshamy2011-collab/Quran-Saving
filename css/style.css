@@ -774,3 +774,27 @@ button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary
 .ayah-nav { display: flex; gap: var(--s2); margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid var(--line); }
 .ayah-nav .btn { flex: 1; justify-content: center; }
 .ayah-nav .btn:disabled { opacity: .45; cursor: default; }
+
+/* ================= معاني الكلمات ================= */
+.mushaf.reader .w[data-k], .mushaf.study .w[data-k] { cursor: pointer; border-radius: 4px; }
+.mushaf.reader .w[data-k]:hover { background: var(--primary-soft); }
+.w.picked { background: var(--warn-bg) !important; box-shadow: inset 0 -2px 0 var(--accent); }
+.word-q { font-family: var(--font-quran); font-size: 1.75rem; line-height: 2; margin: 0; color: var(--primary); }
+.word-meaning { font-family: var(--font-read); font-size: 1.25rem; line-height: 2; margin: 0 0 var(--s3); }
+.tafsir.meanings p { font-size: 1rem; }
+
+/* بداية السؤال في «كمّل الآية» */
+.w.given { color: var(--primary); }
+
+/* ================= كمّل الآية / ربط الصفحات ================= */
+.task-icon.quiz { background: var(--primary-soft); color: var(--primary); }
+.quiz-free h2 { display: flex; align-items: center; gap: var(--s2); font-size: 1.0625rem; margin: 0 0 var(--s2); }
+.quiz-ask { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); padding: var(--s3) var(--s4); margin-bottom: var(--s3); }
+.quiz-ask p { margin: 0; line-height: 1.8; }
+.mushaf.quiz { margin-bottom: var(--s3); }
+.quiz-verdict { padding: var(--s3) var(--s4); }
+.quiz-verdict .verdict { margin: 0 0 var(--s2); }
+.quiz-verdict.ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.quiz-verdict.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); }
+.empty-state p { margin: 0; }
