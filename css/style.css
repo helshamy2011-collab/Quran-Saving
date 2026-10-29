@@ -798,3 +798,13 @@ button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary
 .quiz-verdict.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
 .empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); }
 .empty-state p { margin: 0; }
+
+/* ================= سمّع اللي حافظه ================= */
+.placement h2 { margin: 0 0 var(--s2); }
+.placement p { margin: 0 0 var(--s2); line-height: 1.8; }
+.placement .field { margin: var(--s3) 0; }
+.ayah-stepper { display: inline-flex; align-items: center; gap: var(--s2); margin-top: var(--s1); }
+.ayah-stepper .icon-btn { border: 1px solid var(--line-strong); font-size: 1.375rem; font-weight: 700; }
+.ayah-stepper .icon-btn:disabled { opacity: .4; cursor: default; }
+.ayah-stepper output { min-width: 7.5em; text-align: center; font-weight: 700; font-size: 1.125rem; color: var(--primary); }
+.know-btn { margin-top: var(--s2); }

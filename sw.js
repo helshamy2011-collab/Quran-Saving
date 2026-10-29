@@ -1,5 +1,5 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v16'; // نفس APP_VERSION في js/app.js
+const CACHE = 'hifz-v17'; // نفس APP_VERSION في js/app.js
 const ASSETS = [
   './',
   'index.html',
@@ -17,6 +17,7 @@ const ASSETS = [
   'js/audio.js',
   'js/voicefix.js',
   'js/quiz.js',
+  'js/placement.js',
   'data/quran.json',
   'data/layout.json',
   'data/similar.json',

@@ -14,12 +14,13 @@ import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
 import { icon } from './icons.js';
 import { renderGuided } from './guided.js';
 import { renderQuiz } from './quiz.js';
+import { renderPlacement } from './placement.js';
 import { renderPages, autoFit, getView, setView, tafsirOf, gharibOf } from './mushaf.js';
 import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 16;
+export const APP_VERSION = 17;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -66,7 +67,7 @@ function go(view, params = {}, { push = true } = {}) {
   document.body.dataset.view = view;
   if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
-  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar, mushaf: renderMushaf, quiz: renderQuizView };
+  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar, mushaf: renderMushaf, quiz: renderQuizView, placement: renderPlacementView };
   views[view](params);
   refreshBadge();
   refreshProfileButton();
@@ -135,7 +136,8 @@ function renderHome() {
       if (t.id === 'new' && !t.done) {
         actions = `<button type="button" class="btn primary" data-act="guided">${icon('sprout')}حفّظني خطوة بخطوة</button>
                    <button type="button" class="btn" data-act="study">${icon('headphones')}استمع</button>
-                   <button type="button" class="btn" data-act="recite" data-task="new">${icon('mic')}سمّع</button>`;
+                   <button type="button" class="btn" data-act="recite" data-task="new">${icon('mic')}سمّع</button>
+                   <button type="button" class="btn ghost" data-act="know" data-g="${t.ayahs[0]}">حافظه؟ سمّعه وأنا أعدّي</button>`;
       } else {
         actions = `<button type="button" class="btn ${t.done ? '' : 'primary'}" data-act="recite" data-task="${t.id}">${icon(t.done ? 'repeat' : 'mic')}${t.done ? 'سمّع مرة أخرى' : 'سمّع'}</button>`;
       }
@@ -196,6 +198,7 @@ function renderHome() {
     if (!b) return;
     if (b.dataset.act === 'study') go('study');
     if (b.dataset.act === 'guided') go('guided');
+    if (b.dataset.act === 'know') go('placement', { s: fromGlobal(Number(b.dataset.g)).s, returnTo: 'home' });
     if (b.dataset.act === 'quiz') go('quiz', { pool: [...known], mode: b.dataset.mode, label: 'محفوظك', returnTo: 'home' });
     if (b.dataset.act === 'recite') {
       const t = plan.tasks.find((x) => x.id === b.dataset.task);
@@ -377,6 +380,12 @@ function renderGuidedView({ ayahs, label, returnTo = 'home' } = {}) {
 function renderQuizView(params = {}) {
   if (!params.pool?.length) { go('home', {}, { push: false }); return; }
   renderQuiz({ app, toast, go, back: (to) => back(to), setCleanup: (fn) => { cleanup = fn; } }, params);
+}
+
+// ================= سمّع اللي حافظه (وابدأ الحفظ من مكان ما تقف) =================
+function renderPlacementView(params = {}) {
+  if (!params.s) { go('home', {}, { push: false }); return; }
+  renderPlacement({ app, toast, go, back: (to) => back(to), setCleanup: (fn) => { cleanup = fn; } }, params);
 }
 
 // ================= شاشة التسميع =================
@@ -1225,6 +1234,10 @@ function renderPlan({ welcome = false } = {}) {
           </select></label>
           <label class="field"><span>ابدأ من سورة</span><select name="startSurah">${surahOptions(s.startSurah)}</select></label>
         </div>
+        <div class="know-box">
+          <button type="button" class="btn know-btn" data-act="placement">${icon('mic')}حافظ جزء منها؟ سمّعه</button>
+          <p class="muted small">سمّع من حفظك، ومكان ما تقف يبدأ منه الحفظ الجديد. اللي قرأته يتسجّل محفوظ.</p>
+        </div>
         <div class="field">
           <span id="amount-label">المقدار اليومي</span>
           <div class="combo" role="group" aria-labelledby="amount-label">
@@ -1364,15 +1377,15 @@ function renderPlan({ welcome = false } = {}) {
   };
   showProj();
 
-  form.onsubmit = async (e) => {
-    e.preventDefault();
+  // حفظ الخطة (يُرجع false لو فيه خطأ في النموذج)
+  const saveForm = () => {
     const next = read();
     if (!next.studyDays.length) {
       const err = document.getElementById('days-error');
       err.hidden = false;
       form.querySelector('input[name=day]').focus();
       err.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
-      return;
+      return null;
     }
     const today = dayKey();
     update((x) => {
@@ -1381,6 +1394,13 @@ function renderPlan({ welcome = false } = {}) {
       // إعادة بناء خطة اليوم لو لم يُعتمد حفظ اليوم بعد
       if (x.days[today] && !x.days[today].tasks.new.done) delete x.days[today];
     });
+    return next;
+  };
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const next = saveForm();
+    if (!next) return;
     if (next.reminders) await enableNotifications();
     toast('تم حفظ الخطة');
     go('home');
@@ -1390,6 +1410,11 @@ function renderPlan({ welcome = false } = {}) {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
+    if (act === 'placement') {
+      const next = saveForm();
+      if (next) go('placement', { s: next.startSurah, returnTo: 'plan' });
+      return;
+    }
     if (act === 'juz30') {
       form.querySelectorAll('input[name=prior]').forEach((c) => { if (Number(c.value) >= 78) c.checked = true; });
       showProj();

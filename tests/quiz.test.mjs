@@ -94,3 +94,23 @@ test('ملفات معاني الكلمات: المواضع داخل حدود ا�
   }
   assert.ok(n > 11000);
 });
+
+test('سمّع اللي حافظه: الحفظ الجديد يبدأ من أول آية وقف فيها أو غلط', async () => {
+  const P = await import('../js/placement.js');
+  const ayahs = surah(78).slice(0, 5);
+  const words = wordsOf(ayahs);
+  const m = new Matcher(words);
+  m.feedFinal(ayahs.slice(0, 3).flatMap((g) => Q.ayahWords(g).map((w) => Q.normalizeArabic(w.text))));
+  assert.equal(P.stopIndex(ayahs, words, m.status), 3); // قرأ ٣ آيات صح ووقف
+  m.hint(); // «نسيتها» في أول الرابعة
+  assert.equal(P.stopIndex(ayahs, words, m.status), 3);
+  const all = new Matcher(words);
+  all.feedFinal(ayahs.flatMap((g) => Q.ayahWords(g).map((w) => Q.normalizeArabic(w.text))));
+  assert.equal(P.stopIndex(ayahs, words, all.status), 5); // قرأها كلها
+  // «لم تُسمع بوضوح» لا توقفه
+  const u = words.map(() => STATUS.OK); u[1] = STATUS.UNSURE;
+  assert.equal(P.stopIndex(ayahs, words, u), 5);
+  // يبدأ التسميع من بعد آخر ما حفظه
+  assert.equal(P.firstUnknown(78, new Set(surah(78).slice(0, 10))), 11);
+  assert.equal(P.firstUnknown(112, new Set(surah(112))), null);
+});
