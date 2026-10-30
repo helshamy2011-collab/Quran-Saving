@@ -10,6 +10,10 @@ let SIMILAR = {};            // المتشابهات: آية → [[آية مشا
 let LINES = null;            // مواضع الكلمات في أسطر الصفحة: { ayahs: [[سطر، عدد…]], heads: {صفحة: [[سطر، نوع، سورة]]} }
 let PAGE_START = null;       // أول آية في كل صفحة
 
+// النص يكتب تنوين الضم المتتابع (تنوين الإدغام والإخفاء) بالحرف U+065E، وخط المصحف (Amiri Quran) مفيهوش
+// شكله؛ سفاري بيجيبه من خط تاني فالكلمة تتقطع («عظيمٞ»). نستبدله بالحرف القياسي U+08F1 الموجود في الخط
+export const quranGlyphs = (text) => text.replace(/\u065E/g, '\u08F1');
+
 export async function loadQuran() {
   if (SURAHS) return;
   const [res, lay, sim, lines] = await Promise.all([
@@ -18,7 +22,7 @@ export async function loadQuran() {
   ]);
   if (!res.ok || !lay.ok) throw new Error('تعذر تحميل نص القرآن');
   const data = await res.json();
-  SURAHS = data.surahs.map(([name, type, ayahs]) => ({ name, type, ayahs }));
+  SURAHS = data.surahs.map(([name, type, ayahs]) => ({ name, type, ayahs: ayahs.map(quranGlyphs) }));
   OFFSETS = [];
   let acc = 0;
   for (const s of SURAHS) { OFFSETS.push(acc); acc += s.ayahs.length; }

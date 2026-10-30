@@ -1,7 +1,7 @@
 import {
   loadQuran, surahName, ayahCount, toGlobal, fromGlobal, ayahWords, ayahText,
   describeAyahs, toArabicDigits, surahRangeLabel, describePosition, PAGES, pageAyahs, ayahPage, totalAyahs,
-  similarOf, compareAyahs, confusionFor, ayatLabel,
+  similarOf, compareAyahs, confusionFor, ayatLabel, quranGlyphs,
 } from './quran.js';
 import {
   getState, update, save, dayKey, formatDay, exportData, importData, resetAll, DEFAULT_SETTINGS,
@@ -20,7 +20,7 @@ import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 18;
+export const APP_VERSION = 19;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -754,7 +754,7 @@ function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
   // اقتباسات القرآن داخل التفسير ﴿…﴾ بخط المصحف
   // أثناء التسميع نخفي الاقتباسات حتى لا تنكشف الكلمات المخفية
   const tafsirHtml = (text) => text.split('\n')
-    .map((x) => `<p>${esc(x).replace(/﴿[^﴾]*﴾/g, (q) => `<span class="qq">${hideText ? '﴿…﴾' : q}</span>`)}</p>`).join('');
+    .map((x) => `<p>${esc(x).replace(/﴿[^﴾]*﴾/g, (q) => `<span class="qq">${hideText ? '﴿…﴾' : quranGlyphs(q)}</span>`)}</p>`).join('');
 
   function show(target) {
     g = target;
@@ -785,7 +785,7 @@ function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
       gharibOf(target).then((list) => {
         if (hideText || !list.length || g !== target || !box.isConnected) return;
         box.insertAdjacentHTML('afterend', `<section class="tafsir meanings"><h3>معاني الكلمات</h3>
-          ${list.map((x) => `<p><span class="qq">﴿${esc(x.phrase)}﴾</span> ${esc(x.meaning)}</p>`).join('')}</section>`);
+          ${list.map((x) => `<p><span class="qq">﴿${quranGlyphs(esc(x.phrase))}﴾</span> ${esc(x.meaning)}</p>`).join('')}</section>`);
       }).catch(() => {});
     }).catch(() => {
       if (g !== target) return;
@@ -812,13 +812,13 @@ function openWord(g, k, { mark, onAyah } = {}) {
     },
   });
   const body = el.querySelector('.word-body');
-  const meaningHtml = (x) => `<span class="qq">﴿${esc(x.phrase)}﴾</span> ${esc(x.meaning)}`;
+  const meaningHtml = (x) => `<span class="qq">﴿${quranGlyphs(esc(x.phrase))}﴾</span> ${esc(x.meaning)}`;
   gharibOf(g).then((list) => {
     const hit = list.find((x) => k >= x.from && k <= x.to);
     mark?.(hit ? [hit.from, hit.to] : [k, k]);
     const others = list.filter((x) => x !== hit);
     body.innerHTML = `
-      <p class="word-q">${hit ? esc(hit.phrase) : words[k].text}</p>
+      <p class="word-q">${hit ? quranGlyphs(esc(hit.phrase)) : words[k].text}</p>
       ${hit ? `<p class="word-meaning">${esc(hit.meaning)}</p>`
         : '<p class="muted">الكلمة دي معناها واضح، ومش مشروحة في «الميسر في غريب القرآن». شوف تفسير الآية كاملة.</p>'}
       <div class="chip-row">

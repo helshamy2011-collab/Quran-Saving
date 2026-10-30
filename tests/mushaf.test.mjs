@@ -76,3 +76,11 @@ test('ملفات التفسير تغطي كل آيات القرآن بلا فج�
     assert.equal(next - 1, Q.ayahCount(s), `سورة ${s}`);
   }
 });
+
+test('تنوين الضم المتتابع بحرف موجود في خط المصحف (بدونه سفاري يقطع الكلمة: «عظيمٞ»)', () => {
+  for (let g = 0; g < Q.totalAyahs(); g++) assert.ok(!Q.ayahText(g).includes('ٞ'), `آية ${g}`);
+  const w = Q.ayahWords(Q.toGlobal(2, 7)).at(-1);
+  assert.equal(w.text, 'عَظِيمٞ'.replace('ٞ', 'ࣱ'));
+  assert.equal(Q.normalizeArabic(w.text), 'عظيم');
+  assert.equal(Q.quranGlyphs('مَرَضٞ'), 'مَرَضࣱ');
+});
