@@ -382,8 +382,81 @@ test('التراجع يرجّع الأدلة مع الحكم', () => {
   assert.equal(m.pos, 1);
 });
 
-test('«لن» مكان «لئن» تُقبل الآن صحيحة (عتبة التشابه 0.66 لكلمة من ٣ حروف) — مهمة منفصلة', { todo: 'تحليل أثر العتبة على باقي القرآن قبل تغييرها' }, () => {
-  const m = alaq();
-  say(m, 'كلا لن لم ينته');
-  assert.notEqual(m.status[1], STATUS.OK);
+// ---------- الكلمات القصيرة: كلمة قرآنية مختلفة لا تُقبل لمجرد التشابه ----------
+// «لن» كانت تُقبل مكان «لئن» (تشابه 0.67 ≥ عتبة 0.66 لكلمة من ٣ حروف)
+const run = (s, a1, a2, text) => {
+  const m = new Matcher(words(s, a1, a2));
+  say(m, text);
+  return m;
+};
+
+test('«لن» مكان «لئن»: لا تُقبل — تبقى «لم تُسمع بوضوح» والمسموع محفوظ', () => {
+  const m = run(96, 15, 16, 'كلا لن لم ينته لنسفعا بالناصية');
+  assert.equal(m.status[1], STATUS.UNSURE);
+  assert.equal(m.heardState(1), 'heard-unclear');
+  assert.deepEqual(m.evidence[1].map((e) => e.raw), ['لن']);
+  assert.equal(brief(m), 'ok,unsure,ok,ok,ok,ok');
+});
+
+test('«إن» مكان «لئن» و«لئن» الصحيحة وسقوط الكلمة: ثلاث حالات مختلفة', () => {
+  const said = run(96, 15, 16, 'كلا إن لم ينتهي لنسفعا بالناصية');
+  assert.equal(said.heardState(1), 'heard-unclear');
+  const right = run(96, 15, 16, 'كلا لئن لم ينته لنسفعا بالناصية');
+  assert.equal(right.status[1], STATUS.OK);
+  assert.equal(right.heardState(1), 'matched');
+  const gone = run(96, 15, 16, 'كلا لم ينته لنسفعا بالناصية');
+  assert.equal(gone.heardState(1), 'not-heard');
+});
+
+test('كلمات قصيرة متشابهة الرسم: كلمة قرآنية من ٣ حروف مكان أخرى = خطأ، ومن حرفين = غير متأكد', () => {
+  const lahum = run(2, 22, 22, 'الذي جعل لهم الأرض فراشا'); // لهم مكان لكم
+  assert.equal(lahum.status[2], STATUS.WRONG);
+  assert.deepEqual(lahum.evidence[2].map((e) => e.raw), ['لهم']);
+  const kum = run(2, 22, 22, 'الذي جعل كم الأرض فراشا'); // كم مكان لكم
+  assert.equal(kum.status[2], STATUS.UNSURE);
+  const rab = run(2, 2, 2, 'ذلك الكتاب لا رب فيه'); // رب مكان ريب
+  assert.notEqual(rab.status[3], STATUS.OK);
+  assert.equal(run(2, 22, 22, 'الذي جعل لكم الأرض فراشا').score().mistakes, 0);
+});
+
+test('الكلمة نفسها بالإملاء العادي (كما يكتبها المحرك) تبقى صحيحة: رأى/رءا، لدى/لدا، طغى/طغا', () => {
+  assert.equal(run(6, 76, 76, 'فلما جن عليه الليل رأى كوكبا').status[4], STATUS.OK);
+  assert.equal(run(12, 25, 25, 'واستبقا الباب وقدت قميصه من دبر وألفيا سيدها لدى الباب').status[8], STATUS.OK);
+  assert.equal(run(69, 11, 11, 'إنا لما طغى الماء حملناكم').status[2], STATUS.OK);
+  // كتابة ليست كلمة قرآنية (ينتهي/ينته) ما زالت تُقبل بالتشابه
+  assert.equal(run(96, 15, 16, 'كلا لئن لم ينتهي').status[3], STATUS.OK);
+});
+
+test('القرآن كله بالإملاء العادي: صفر أخطاء (القاعدة لا تحوّل الكلمات الصحيحة لأخطاء)', () => {
+  let bad = 0;
+  const ex = [];
+  for (let g = 0; g < Q.totalAyahs(); g++) {
+    const ws = Q.ayahWords(g);
+    // الإملاء العادي = آخر صيغة مضافة من data/imlaei.json لو موجودة، وإلا الصيغة الأساسية
+    const plain = ws.map((w) => w.forms.at(-1));
+    const m = new Matcher(ws.map((w, i) => ({ ...w, g, w: i })));
+    m.feedFinal(plain);
+    if (!m.done || m.score().mistakes) { bad++; if (ex.length < 3) ex.push(`${g}: ${m.status.join(',')}`); }
+  }
+  assert.equal(bad, 0, ex.join(' | '));
+});
+
+test('لا كلمة قرآنية مختلفة من ٣ حروف فأقل تُقبل مكان أخرى بالتشابه', () => {
+  const expected = new Map();
+  const vocab = new Set();
+  for (let g = 0; g < Q.totalAyahs(); g++) {
+    for (const w of Q.ayahWords(g)) {
+      if (!w.letters && w.forms[0].length <= 3 && !expected.has(w.forms[0])) expected.set(w.forms[0], w);
+      w.forms.forEach((f) => vocab.add(f));
+    }
+  }
+  const leaks = [];
+  for (const w of expected.values()) {
+    for (const h of vocab) {
+      if (h.length > 3 || w.forms.includes(h)) continue;
+      const sc = Q.wordScore(h, w);
+      if (sc > 0 && sc < 1) leaks.push(`${h}→${w.forms[0]}`);
+    }
+  }
+  assert.deepEqual(leaks.slice(0, 10), []);
 });

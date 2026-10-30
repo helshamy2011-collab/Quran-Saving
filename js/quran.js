@@ -9,6 +9,7 @@ let LAYOUT = null;           // لكل آية: [الصفحة، أول سطر، �
 let SIMILAR = {};            // المتشابهات: آية → [[آية مشابهة، نسبة التشابه]]
 let LINES = null;            // مواضع الكلمات في أسطر الصفحة: { ayahs: [[سطر، عدد…]], heads: {صفحة: [[سطر، نوع، سورة]]} }
 let PAGE_START = null;       // أول آية في كل صفحة
+let IMLAEI = {};             // الرسم الإملائي للكلمات اللي يختلف رسمها: { آية: { رقم الكلمة: صيغة مطبّعة } }
 
 // النص يكتب تنوين الضم المتتابع (تنوين الإدغام والإخفاء) بالحرف U+065E، وخط المصحف (Amiri Quran) مفيهوش
 // شكله؛ سفاري بيجيبه من خط تاني فالكلمة تتقطع («عظيمٞ»). نستبدله بالحرف القياسي U+08F1 الموجود في الخط
@@ -16,9 +17,10 @@ export const quranGlyphs = (text) => text.replace(/\u065E/g, '\u08F1');
 
 export async function loadQuran() {
   if (SURAHS) return;
-  const [res, lay, sim, lines] = await Promise.all([
+  const [res, lay, sim, lines, imlaei] = await Promise.all([
     fetch('data/quran.json'), fetch('data/layout.json'),
     fetch('data/similar.json').catch(() => null), fetch('data/lines.json').catch(() => null),
+    fetch('data/imlaei.json').catch(() => null),
   ]);
   if (!res.ok || !lay.ok) throw new Error('تعذر تحميل نص القرآن');
   const data = await res.json();
@@ -32,6 +34,7 @@ export async function loadQuran() {
   LAYOUT.forEach(([p], g) => { if (PAGE_START[p] == null) PAGE_START[p] = g; });
   try { if (lines?.ok) LINES = await lines.json(); } catch { LINES = null; }
   try { if (sim?.ok) SIMILAR = (await sim.json()).similar; } catch { SIMILAR = {}; }
+  try { if (imlaei?.ok) IMLAEI = (await imlaei.json()).forms; } catch { IMLAEI = {}; }
 }
 
 // ---------- المتشابهات ----------
@@ -201,6 +204,9 @@ export function ayahWords(g) {
   const { s, a } = fromGlobal(g);
   const words = ayahText(g).split(/\s+/).filter(Boolean).map((text, i) => {
     const word = { text, forms: uthmaniForms(text) };
+    // كتابة الكلمة نفسها بالإملاء العادي (من النص الإملائي للمصحف، لهذا الموضع بالذات)
+    const plain = IMLAEI[g]?.[i];
+    if (plain && !word.forms.includes(plain)) word.forms.push(plain);
     if (i === 0 && isMuqattaat(s, a)) addLetterNames(word);
     return word;
   });
@@ -356,6 +362,7 @@ export function wordMatches(heard, word) {
 // درجة التطابق (0 = لا تطابق، وإلا نسبة التشابه) — للمفاضلة بين قراءتين محتملتين
 export function wordScore(heard, word) {
   let best = 0;
+  let direct = false; // أفضل نتيجة من مقارنة مباشرة (مش بعد حذف «ال»)
   for (const f of word.forms) {
     // زيادة أو حذف واو/فاء العطف خطأ حقيقي في الحفظ (واحد ≠ أحد، فلا ≠ لا)
     if (heard.length !== f.length && /^[وف]/.test(heard + f)) {
@@ -363,18 +370,27 @@ export function wordScore(heard, word) {
       if (long.length === short.length + 1 && /^[وف]/.test(long) && long.slice(1) === short) continue;
     }
     const s = sim(heard, f);
-    if (s > best) best = s;
+    if (s > best) { best = s; direct = true; }
     // التعرف الصوتي أحياناً يحذف "ال" التعريف
     if (f.length > 4 && f.startsWith('ال') && !heard.startsWith('ال')) {
-      best = Math.max(best, sim(heard, f.slice(2)) - 0.1);
+      const t = sim(heard, f.slice(2)) - 0.1;
+      if (t > best) { best = t; direct = false; }
     }
   }
   const len = Math.max(heard.length, word.forms[0].length);
   let threshold = len <= 2 ? 1 : len <= 3 ? 0.66 : 0.7;
   // الحروف المقطعة: حرف واحد مختلف = خطأ (ألف لام را ≠ ألف لام ميم)
   if (word.letters) threshold = Math.max(threshold, 0.85);
-  return best >= threshold ? best : 0;
+  if (best < threshold) return 0;
+  // في الكلمات القصيرة (٣ حروف فأقل) تعديل واحد = ثلث الكلمة: لو المسموع كلمة قرآنية مختلفة
+  // (لن/لئن، لهم/لكم، لم/لهم) فهو قال كلمة تانية، مش نفس الكلمة بإملاء مختلف — لا نقبلها بالتشابه.
+  // الإملاء العادي للكلمة نفسها (رأى/رءا) من صيغها (data/imlaei.json) فيطابق تماماً ولا يتأثر
+  if (best < 1 && direct && len <= DISTINCT_SHORT_LEN && isQuranWord(heard)) return 0;
+  return best;
 }
+
+// أقصى طول تُرفض فيه المطابقة غير التامة لو المسموع كلمة قرآنية مختلفة (انظر تحليل الأثر في الاختبارات)
+const DISTINCT_SHORT_LEN = 3;
 
 // ---------- أحكام التجويد بين كلمتين ----------
 // التعرف الصوتي يكتب غالباً الكلمات بإملائها العادي مهما كان النطق، لكنه أحياناً يكتب ما سمعه فعلاً:

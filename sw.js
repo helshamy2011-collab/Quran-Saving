@@ -22,6 +22,7 @@ const ASSETS = [
   'data/layout.json',
   'data/similar.json',
   'data/lines.json',
+  'data/imlaei.json',
   'icons/icon.svg',
   'manifest.webmanifest',
 ];
