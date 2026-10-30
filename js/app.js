@@ -625,7 +625,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
       if (!b) return;
       if (b.dataset.act === 'copy-log') {
         const ref = describeAyahs(ayahs);
-        const text = `${ref}\n${rec.log.join('\n')}`;
+        const text = `${ref}\n${rec.log.join('\n')}\n\n${reportText(rec.report())}`;
         navigator.clipboard?.writeText(text).then(() => toast('اتنسخ — ابعته في الشات')).catch(() => toast('ما قدرتش أنسخ — صوّر الشاشة'));
         return;
       }
@@ -646,6 +646,26 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
     if (b.dataset.act === 'view') { rec.setLayout(toggleView()); b.outerHTML = viewToggle(); }
   };
   cleanup = () => { finished = true; fixer.stop(); rec.destroy(); };
+}
+
+// نص التشخيص المنسوخ: الطبقات منفصلة (ما أعاده المحرك ← المطبّع ← نتيجة المطابقة)
+function reportText(r) {
+  const HEARD = { 'heard-unclear': 'سُمع مكانها ولم يكفِ للحكم', 'heard-mismatch': 'سُمع مكانها ولا يطابقها', 'not-heard': 'لم يُسمع مكانها شيء' };
+  const lines = ['— ما أعاده محرك التعرف —'];
+  r.transcripts.forEach((t, i) => {
+    lines.push(`${i + 1}) الخام: ${t.raw}${t.partial ? ' (غير مكتملة)' : ''}`);
+    if (t.alternatives.length > 1) lines.push(`   البدائل: ${t.alternatives.join(' | ')}`);
+    if (t.chosen !== t.raw) lines.push(`   المختار للمطابقة: ${t.chosen}`);
+    lines.push(`   المطبّع: ${t.normalized}`);
+  });
+  lines.push('— نتيجة المطابقة (الكلمات غير المطابقة فقط) —');
+  for (const w of r.words) {
+    if (w.heard === 'matched' || w.heard === 'pending' || w.heard === 'given') continue;
+    const ev = w.evidence.filter((e) => e.place === 'in').map((e) => e.raw).join(' ');
+    lines.push(`${w.expected}: ${w.status} — ${HEARD[w.heard] || w.heard}${ev ? `: ${ev}` : ''}`);
+  }
+  if (r.unplaced.length) lines.push(`كلام لم يُنسب لموضع: ${r.unplaced.map((e) => e.raw).join(' ')}`);
+  return lines.join('\n');
 }
 
 // سطر في قائمة الأخطاء: الكلمة في سياقها

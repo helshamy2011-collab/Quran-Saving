@@ -297,3 +297,93 @@ test('آخر كلمة: كلمة قرآنية تانية مكانها تُحسب 
   assert.ok(m3.finishTail(2));
   assert.equal(m3.status[3], STATUS.UNSURE);
 });
+
+// ---------- الأدلة: ما سمعه المحرك منفصل عن الحكم (العلق ١٥–١٦، تسجيل حقيقي) ----------
+const alaq = () => new Matcher(words(96, 15, 16));
+const brief = (m, n = 6) => m.status.slice(0, n).join(',');
+
+test('العلق ١٥: «إن» مكان «لئن» تبقى «لم تُسمع بوضوح» لكن الكلمة المسموعة محفوظة في موضعها', () => {
+  const m = alaq();
+  say(m, 'كلا إن لم ينتهي لنسفعا بالناصية');
+  assert.equal(brief(m), 'ok,unsure,ok,ok,ok,ok');
+  assert.equal(m.score().mistakes, 0);
+  assert.equal(m.heardState(1), 'heard-unclear');
+  assert.deepEqual(m.evidence[1], [{ raw: 'إن', norm: 'ان', place: 'in' }]);
+  // الخام لا يُستبدل بالنص القرآني: «ينتهي» تبقى كما كتبها المحرك
+  assert.equal(m.matchedRaw[3], 'ينتهي');
+  assert.equal(m.lastFinal.raw, 'كلا إن لم ينتهي لنسفعا بالناصية');
+  assert.equal(m.lastFinal.normalized, 'كلا ان لم ينتهي لنسفعا بالناصيه');
+});
+
+test('الكلمة لم تُسمع أصلاً ≠ سُمعت كلمة مكانها', () => {
+  const m = alaq();
+  say(m, 'كلا لم ينتهي لنسفعا بالناصية');
+  assert.equal(brief(m), 'ok,unsure,ok,ok,ok,ok');
+  assert.equal(m.heardState(1), 'not-heard');
+  assert.deepEqual(m.evidence[1], []);
+});
+
+test('خطأ حفظ حقيقي لا يُخفى: كلمة قرآنية مكان «لئن» (كلمة أو كلمتين) = خطأ والمسموع محفوظ', () => {
+  const m = alaq();
+  say(m, 'كلا إذا لم ينته لنسفعا بالناصية');
+  assert.equal(m.status[1], STATUS.WRONG);
+  assert.equal(m.heardState(1), 'heard-mismatch');
+  assert.deepEqual(m.evidence[1].map((e) => e.raw), ['إذا']);
+  const m2 = alaq();
+  say(m2, 'كلا إذا قال لم ينته لنسفعا');
+  assert.equal(m2.status[1], STATUS.WRONG);
+  assert.deepEqual(m2.evidence[1].filter((e) => e.place === 'in').map((e) => e.raw), ['قال']);
+  assert.deepEqual(m2.evidence[1].map((e) => e.raw), ['إذا', 'قال']); // لا شيء يضيع
+});
+
+test('الإدغام بغير غنة «لئن لم» موصولاً «لئلم» صحيح للكلمتين', () => {
+  const m = alaq();
+  say(m, 'كلا لئلم ينته لنسفعا بالناصية');
+  assert.equal(brief(m), 'ok,ok,ok,ok,ok,ok');
+  assert.equal(m.matchedRaw[1], 'لئلم');
+  assert.equal(m.matchedRaw[2], 'لئلم');
+});
+
+test('ضوضاء قصيرة قبل كلمة صحيحة: تُحفظ «قبلها» ولا تغيّر الحكم (لا «تردد»)', () => {
+  const m = alaq();
+  say(m, 'كلا ان لئن لم ينته لنسفعا');
+  assert.equal(brief(m, 5), 'ok,ok,ok,ok,ok');
+  assert.equal(m.heardState(1), 'matched');
+  assert.deepEqual(m.evidence[1], [{ raw: 'ان', norm: 'ان', place: 'before' }]);
+});
+
+test('أكثر من موضع ملتبس في نفس التلاوة: كل موضع يحتفظ بدليله', () => {
+  const m = alaq();
+  say(m, 'كلا إن لم ينتهي لنسفعا بالناصية ناصية كذ خاطئة');
+  assert.ok(m.done);
+  assert.equal(m.status[1], STATUS.UNSURE);
+  assert.equal(m.status[7], STATUS.UNSURE);
+  assert.deepEqual(m.evidence[1].map((e) => e.raw), ['إن']);
+  assert.deepEqual(m.evidence[7].map((e) => e.raw), ['كذ']);
+  assert.equal(m.score().mistakes, 0);
+});
+
+test('عدة كلمات قصيرة لموضع واحد (منها حرف منفرد): كلها محفوظة، الأقدم «قبلها» والأخير «مكانها»', () => {
+  const m = alaq();
+  say(m, 'كلا ان ي لم ينته');
+  assert.equal(m.status[1], STATUS.UNSURE);
+  assert.deepEqual(m.evidence[1].map((e) => `${e.raw}:${e.place}`), ['ان:before', 'ي:in']);
+  assert.equal(m.lastFinal.tokens[2].role, 'letter');
+});
+
+test('التراجع يرجّع الأدلة مع الحكم', () => {
+  const m = alaq();
+  say(m, 'كلا');
+  m.snapshot();
+  say(m, 'إن لم ينته');
+  assert.equal(m.evidence[1].length, 1);
+  m.undo();
+  assert.equal(m.evidence[1].length, 0);
+  assert.equal(m.pos, 1);
+});
+
+test('«لن» مكان «لئن» تُقبل الآن صحيحة (عتبة التشابه 0.66 لكلمة من ٣ حروف) — مهمة منفصلة', { todo: 'تحليل أثر العتبة على باقي القرآن قبل تغييرها' }, () => {
+  const m = alaq();
+  say(m, 'كلا لن لم ينته');
+  assert.notEqual(m.status[1], STATUS.OK);
+});

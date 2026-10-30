@@ -81,6 +81,9 @@ export class Recitation {
 
     this.consumed = new Map();
     this.log = [];          // كل ما سمعه البرنامج (لعرضه في النتيجة ولتشخيص المشاكل)
+    // سجل منفصل لكل نتيجة نهائية: النص الخام من المحرك وكل بدائله، والبديل المختار، والنص المطبّع
+    // (لا يُستبدل أي منها بالنص القرآني)
+    this.transcripts = [];
     this.lastSession = null;
     this.listener = this.manual ? null : new Listener({
       lang,
@@ -159,6 +162,22 @@ export class Recitation {
   }
 
   get score() { return this.matcher.score(); }
+
+  // تقرير التلاوة بطبقاته المنفصلة: ما أعاده المحرك، والنص المطبّع، ونتيجة المطابقة لكل كلمة متوقعة
+  report() {
+    const m = this.matcher;
+    return {
+      transcripts: this.transcripts,
+      words: this.words.map((w, i) => ({
+        ayah: w.g, index: w.w, expected: w.text,
+        status: m.status[i],            // الحكم
+        heard: m.heardState(i),         // matched | heard-unclear | heard-mismatch | not-heard | pending
+        matchedBy: m.matchedRaw[i],     // الكلمة المسموعة اللي طابقتها
+        evidence: m.evidence[i],        // ما سُمع مكانها أو قبلها ولم يطابق
+      })),
+      unplaced: m.unplaced,
+    };
+  }
   get status() { return this.matcher.status; }
 
   paint() {
@@ -222,6 +241,14 @@ export class Recitation {
     m.snapshot();
     this.log.push(best.join(' '));
     m.feedFinal(best.slice(used));
+    this.transcripts.push({
+      raw: alts[0].join(' '),                    // ما أعاده المحرك أولاً كما هو
+      alternatives: alts.map((a) => a.join(' ')), // كل البدائل المتاحة
+      chosen: best.join(' '),                    // البديل المستخدم للمطابقة
+      consumedByInterim: best.slice(0, used).join(' '), // جزء طابق أثناء النتائج المؤقتة
+      normalized: m.lastFinal?.normalized ?? '',  // النص المطبّع اللي دخل المطابقة
+      tokens: m.lastFinal?.tokens ?? [],
+    });
     this.consumed.delete(key);
     this.paint();
   }
@@ -234,8 +261,14 @@ export class Recitation {
       const { key, tokens } = this.lastInterim;
       this.lastInterim = null;
       m.snapshot();
-      m.feedFinal(tokens.slice(this.consumed.get(key) || 0));
+      const used = this.consumed.get(key) || 0;
+      m.feedFinal(tokens.slice(used));
       this.log.push(`${tokens.join(' ')} (غير مكتملة)`);
+      this.transcripts.push({
+        raw: tokens.join(' '), alternatives: [tokens.join(' ')], chosen: tokens.join(' '), partial: true,
+        consumedByInterim: tokens.slice(0, used).join(' '),
+        normalized: m.lastFinal?.normalized ?? '', tokens: m.lastFinal?.tokens ?? [],
+      });
     }
     if (!m.done) m.finishTail(2);
     this.paint();
