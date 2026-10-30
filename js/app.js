@@ -1,13 +1,13 @@
 import {
   loadQuran, surahName, ayahCount, toGlobal, fromGlobal, ayahWords, ayahText,
   describeAyahs, toArabicDigits, surahRangeLabel, describePosition, PAGES, pageAyahs, ayahPage, totalAyahs,
-  similarOf, compareAyahs, confusionFor,
+  similarOf, compareAyahs, confusionFor, ayatLabel,
 } from './quran.js';
 import {
   getState, update, save, dayKey, formatDay, exportData, importData, resetAll, DEFAULT_SETTINGS,
   getProfiles, activeProfile, switchProfile, addProfile, renameProfile, deleteProfile, peekProfile,
 } from './store.js';
-import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, previewChunk, dueWeak, weakAyahs, memorizedSet, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
+import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, previewChunk, dueWeak, weakAyahs, memorizedSet, surahProgress, setFocus, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
 import { STATUS, isMistake } from './matcher.js';
 import { speechSupported } from './speech.js';
 import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
@@ -20,7 +20,7 @@ import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 17;
+export const APP_VERSION = 18;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -51,12 +51,13 @@ function toast(msg, ms = 2600) {
 
 // ---------- التنقل ----------
 // كل شاشة لها مدخل في سجل المتصفح حتى يعمل زر الرجوع في الموبايل
-const TAB_VIEWS = ['home', 'mushaf', 'weak', 'free', 'plan', 'people', 'similar'];
+const TAB_VIEWS = ['home', 'mushaf', 'weak', 'free', 'plan', 'people', 'similar', 'surahs'];
 
 function go(view, params = {}, { push = true } = {}) {
   if (reloadPending && TAB_VIEWS.includes(view)) { location.hash = view; location.reload(); return; }
   if (cleanup) { cleanup(); cleanup = null; }
   app.onsubmit = null;
+  app.onchange = null;
   const tab = TAB_VIEWS.includes(view) ? view : null;
   for (const b of tabs.querySelectorAll('button')) {
     if (b.dataset.view === tab) b.setAttribute('aria-current', 'page');
@@ -67,7 +68,7 @@ function go(view, params = {}, { push = true } = {}) {
   document.body.dataset.view = view;
   if (push && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
   window.scrollTo(0, 0);
-  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar, mushaf: renderMushaf, quiz: renderQuizView, placement: renderPlacementView };
+  const views = { home: renderHome, weak: renderWeak, free: renderFree, plan: renderPlan, study: renderStudy, recite: renderRecite, guided: renderGuidedView, people: renderPeople, similar: renderSimilar, mushaf: renderMushaf, quiz: renderQuizView, placement: renderPlacementView, surahs: renderSurahs };
   views[view](params);
   refreshBadge();
   refreshProfileButton();
@@ -119,6 +120,14 @@ function renderHome() {
   const weakTask = plan.tasks.find((t) => t.id === 'weak');
   const isStudyDay = st.settings.studyDays.includes(new Date().getDay());
 
+  // السورة اللي بيكمّلها (أو رابط لاختيار سورة)
+  const focusLine = () => {
+    const f = st.settings.focusSurah;
+    if (!f) return '<button type="button" class="link-btn" data-act="surahs">عايز تحفظ سورة معينة؟ اختارها</button>';
+    const left = surahProgress().find((x) => x.s === f);
+    return `<p class="focus-line small">${icon('sprout', { size: 14 })}بتكمّل سورة ${surahName(f)} · باقي ${ayatLabel(left.total - left.known)} <button type="button" class="link-btn" data-act="surahs">تغيير</button></p>`;
+  };
+
   const taskCard = (t) => {
     let range;
     let actions = '';
@@ -131,8 +140,9 @@ function renderHome() {
       };
       range = `<p class="muted small empty">${empty[t.id]}</p>`;
     } else {
-      range = `<p class="range">${esc(describeAyahs(t.ayahs))} <span class="muted small">· ${ar(t.ayahs.length)} آية</span></p>
-        ${t.id === 'weak' ? '' : `<p class="position small">${icon('book', { size: 14 })}${describePosition(t.ayahs)}</p>`}`;
+      range = `<p class="range">${esc(describeAyahs(t.ayahs))} <span class="muted small">· ${ayatLabel(t.ayahs.length)}</span></p>
+        ${t.id === 'weak' ? '' : `<p class="position small">${icon('book', { size: 14 })}${describePosition(t.ayahs)}</p>`}
+        ${t.id === 'new' ? focusLine() : ''}`;
       if (t.id === 'new' && !t.done) {
         actions = `<button type="button" class="btn primary" data-act="guided">${icon('sprout')}حفّظني خطوة بخطوة</button>
                    <button type="button" class="btn" data-act="study">${icon('headphones')}استمع</button>
@@ -177,6 +187,7 @@ function renderHome() {
       </div>
       <div class="row small"><span>التقدم في حفظ القرآن</span><span class="spacer"></span><b>${ar(s.percent.toFixed(1))}٪</b></div>
       <div class="progress" role="progressbar" aria-label="التقدم في حفظ القرآن" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${s.percent.toFixed(1)}"><i style="width:${Math.min(100, s.percent)}%"></i></div>
+      <button type="button" class="link-btn" data-act="surahs">${icon('book', { size: 16 })}محفوظاتي — السور اللي حفظتها${icon('chevronL', { size: 16 })}</button>
     </section>` : ''}
     ${ordered.map(taskCard).join('')}
     ${known.size >= 3 ? `<section class="card task quiz-card" aria-label="اختبر حفظك">
@@ -198,6 +209,7 @@ function renderHome() {
     if (!b) return;
     if (b.dataset.act === 'study') go('study');
     if (b.dataset.act === 'guided') go('guided');
+    if (b.dataset.act === 'surahs') go('surahs');
     if (b.dataset.act === 'know') go('placement', { s: fromGlobal(Number(b.dataset.g)).s, returnTo: 'home' });
     if (b.dataset.act === 'quiz') go('quiz', { pool: [...known], mode: b.dataset.mode, label: 'محفوظك', returnTo: 'home' });
     if (b.dataset.act === 'recite') {
@@ -382,6 +394,103 @@ function renderQuizView(params = {}) {
   renderQuiz({ app, toast, go, back: (to) => back(to), setCleanup: (fn) => { cleanup = fn; } }, params);
 }
 
+// ================= محفوظاتي: تقدّم كل سورة، واختيار سورة تكمّل حفظها =================
+function renderSurahs() {
+  const st = getState();
+  const list = surahProgress();
+  const focus = st.settings.focusSurah;
+  const dates = st.surahDates || {};
+  const prior = new Set(st.settings.prior);
+  const full = list.filter((x) => x.known === x.total);
+  const started = list.filter((x) => x.known && x.known < x.total);
+  let filter = localStorage.getItem('surahs-filter') || 'all';
+
+  const row = (x) => {
+    const done = x.known === x.total;
+    const pct = Math.round((x.known / x.total) * 100);
+    const note = done
+      ? (dates[x.s] ? `اتحفظت ${formatDay(dates[x.s])}` : prior.has(x.s) ? 'محفوظة من قبل' : 'محفوظة')
+      : x.known ? `${ar(x.known)} من ${ayatLabel(x.total)}` : ayatLabel(x.total);
+    return `<li><button type="button" class="surah-row ${done ? 'done' : ''} ${x.s === focus ? 'focus' : ''}" data-s="${x.s}">
+      <span class="num">${done ? icon('check', { size: 16 }) : ar(x.s)}</span>
+      <span class="info"><b>${surahName(x.s)}</b>${x.s === focus ? ' <span class="tag ok">بتحفظها دلوقتي</span>' : ''}
+        <span class="muted small">${note}</span>
+        ${x.known && !done ? `<span class="bar" aria-hidden="true"><i style="width:${pct}%"></i></span>` : ''}</span>
+      ${icon('chevronL', { size: 18 })}
+    </button></li>`;
+  };
+
+  const paint = () => {
+    const shown = filter === 'done' ? full : filter === 'started' ? started : list;
+    document.getElementById('surah-list').innerHTML = shown.length ? shown.map(row).join('')
+      : `<li class="muted empty">${filter === 'done' ? 'لسه مفيش سورة كاملة — اختار سورة واضغط «كمّل حفظها».' : 'مفيش سور بدأتها لسه.'}</li>`;
+    app.querySelectorAll('.segmented input').forEach((r) => { r.checked = r.value === filter; });
+  };
+
+  app.innerHTML = `
+    <header class="page-head compact">
+      <h1>محفوظاتي</h1>
+      <p class="muted">${ar(full.length)} سورة كاملة${started.length ? ` · ${ar(started.length)} بدأت فيها` : ''}. اختار سورة تكمّل حفظها، ولما تخلص بتتسجل محفوظة.</p>
+    </header>
+    ${focus ? `<div class="alert info" role="note">${icon('sprout')}<div>بتحفظ دلوقتي <b>سورة ${surahName(focus)}</b> — الورد اليومي منها لحد ما تخلص، وبعدين ترجع الخطة.</div></div>` : ''}
+    <div class="segmented" role="radiogroup" aria-label="عرض">
+      <label><input type="radio" name="sf" value="all"><span>كل السور</span></label>
+      <label><input type="radio" name="sf" value="started"><span>بدأتها (${ar(started.length)})</span></label>
+      <label><input type="radio" name="sf" value="done"><span>محفوظة (${ar(full.length)})</span></label>
+    </div>
+    <ul class="surah-list" id="surah-list"></ul>`;
+  paint();
+
+  app.onchange = (e) => {
+    if (e.target.name !== 'sf') return;
+    filter = e.target.value;
+    try { localStorage.setItem('surahs-filter', filter); } catch { /* */ }
+    paint();
+  };
+  app.onclick = (e) => {
+    const b = e.target.closest('.surah-row');
+    if (b) openSurah(Number(b.dataset.s));
+  };
+}
+
+// نافذة سورة: كمّل حفظها / سمّع اللي حافظه منها / سمّع المحفوظ / اختبرني
+function openSurah(s) {
+  const st = getState();
+  const known = memorizedSet();
+  const ayahs = Array.from({ length: ayahCount(s) }, (_, i) => toGlobal(s, i + 1));
+  const have = ayahs.filter((g) => known.has(g));
+  const done = have.length === ayahs.length;
+  const isFocus = st.settings.focusSurah === s;
+  const next = ayahs.find((g) => !known.has(g));
+  openSheet({
+    title: `سورة ${surahName(s)}`,
+    iconName: 'book',
+    body: `<p class="muted">${done ? `محفوظة كلها (${ayatLabel(ayahs.length)})` : have.length ? `حافظ ${ar(have.length)} من ${ayatLabel(ayahs.length)} — الباقي يبدأ من الآية ${ar(fromGlobal(next).a)}` : `${ayatLabel(ayahs.length)} · ${describePosition(ayahs)}`}</p>
+      <div class="sheet-actions">
+        ${done ? '' : isFocus
+          ? `<button type="button" class="btn" data-a="unfocus">${icon('undo', { size: 18 })}وقّف التركيز عليها وارجع للخطة</button>`
+          : `<button type="button" class="btn primary" data-a="focus">${icon('sprout', { size: 18 })}${have.length ? 'كمّل حفظها' : 'ابدأ حفظها'}</button>
+             <p class="muted small">الورد اليومي هيبقى منها لحد ما تخلّصها، وبعدها تتسجل محفوظة وترجع خطتك.</p>`}
+        ${done ? '' : `<button type="button" class="btn" data-a="place">${icon('mic', { size: 18 })}حافظ جزء منها؟ سمّعه</button>`}
+        ${have.length ? `<button type="button" class="btn" data-a="recite">${icon('repeat', { size: 18 })}سمّع المحفوظ منها</button>` : ''}
+        ${have.length >= 3 ? `<button type="button" class="btn" data-a="quiz">${icon('target', { size: 18 })}اختبرني فيها</button>` : ''}
+        <button type="button" class="btn ghost" data-a="read">${icon('book', { size: 18 })}افتحها في المصحف</button>
+      </div>`,
+    onClick: (e, close) => {
+      const b = e.target.closest('[data-a]');
+      if (!b) return;
+      close();
+      const a = b.dataset.a;
+      if (a === 'focus') { setFocus(s); toast(`تمام — الورد اليومي من سورة ${surahName(s)} لحد ما تخلص`); go('home'); }
+      if (a === 'unfocus') { setFocus(null); toast('رجعنا لترتيب الخطة'); renderSurahs(); }
+      if (a === 'place') go('placement', { s, returnTo: 'surahs' });
+      if (a === 'recite') go('recite', { taskId: 'free', label: `سورة ${surahName(s)}`, ayahs: have, returnTo: 'surahs' });
+      if (a === 'quiz') go('quiz', { pool: have, mode: 'continue', label: surahName(s), returnTo: 'surahs' });
+      if (a === 'read') { localStorage.setItem('mushaf-page', String(ayahPage(ayahs[0]))); go('mushaf'); }
+    },
+  });
+}
+
 // ================= سمّع اللي حافظه (وابدأ الحفظ من مكان ما تقف) =================
 function renderPlacementView(params = {}) {
   if (!params.s) { go('home', {}, { push: false }); return; }
@@ -459,7 +568,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
     const readIssue = status.map((x, i) => isMistake(x) && isReadIssue(words[i].g, words[i].w));
     // هل الخطأ خلط بآية متشابهة؟
     const confused = status.map((x, i) => (isMistake(x) && !reading ? confusionFor(words[i].g, words[i].w, rec.matcher.heardAt[i], x) : null));
-    recordSession({ taskId, label, words, status, score: sc, reading, confused });
+    const completed = recordSession({ taskId, label, words, status, score: sc, reading, confused });
     refreshBadge();
     const mistakes = status.map((x, i) => ({ x, i })).filter((o) => isMistake(o.x));
     const passMark = getState().settings.passMark;
@@ -490,6 +599,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
         <p class="muted small">${ar(sc.done)} من ${ar(sc.total)} كلمة · ${ar(sc.mistakes)} خطأ</p></div>
       </div>
       ${verdict}
+      ${completed.length ? `<p class="verdict ok celebrate">${icon('award')}<span>ما شاء الله! أتممت حفظ ${completed.map((x) => `سورة ${surahName(x)}`).join(' و')} — اتسجلت في محفوظاتك.</span></p>` : ''}
       ${mistakes.length ? `<h3>${reading ? 'كلمات تعثرت فيها وانت بتقرأ' : memoryCount ? 'حفظتُ لك هذه المواضع للمراجعة' : 'المواضع الملونة'}</h3>
       <ul class="mistake-list">${mistakes.map(({ x, i }) => mistakeItem(words[i], x, readIssue[i] && !reading, confused[i])).join('')}</ul>
       <p class="muted small">${reading
@@ -1237,6 +1347,7 @@ function renderPlan({ welcome = false } = {}) {
         <div class="know-box">
           <button type="button" class="btn know-btn" data-act="placement">${icon('mic')}حافظ جزء منها؟ سمّعه</button>
           <p class="muted small">سمّع من حفظك، ومكان ما تقف يبدأ منه الحفظ الجديد. اللي قرأته يتسجّل محفوظ.</p>
+          ${welcome ? '' : '<button type="button" class="link-btn" data-act="surahs">أو اختار سورة معينة تكمّل حفظها (محفوظاتي)</button>'}
         </div>
         <div class="field">
           <span id="amount-label">المقدار اليومي</span>
@@ -1410,6 +1521,7 @@ function renderPlan({ welcome = false } = {}) {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
+    if (act === 'surahs') { go('surahs'); return; }
     if (act === 'placement') {
       const next = saveForm();
       if (next) go('placement', { s: next.startSurah, returnTo: 'plan' });

@@ -1,9 +1,9 @@
 // «سمّع اللي حافظه»: تسمّع من حفظك من أول السورة (أو من بعد آخر ما حفظته)،
 // ومكان ما تقف يبدأ منه الحفظ الجديد. اللي قرأته يتسجّل محفوظ، وأخطاؤك فيه تدخل نقاط الضعف
 
-import { ayahCount, toGlobal, surahName, toArabicDigits as ar } from './quran.js';
+import { ayahCount, toGlobal, surahName, toArabicDigits as ar, ayatLabel as ayatCount } from './quran.js';
 import { getState, update, dayKey } from './store.js';
-import { memorizedSet, recordSession } from './plan.js';
+import { memorizedSet, recordSession, completeSet, noteCompleted } from './plan.js';
 import { STATUS, isMistake } from './matcher.js';
 import { Recitation } from './recitation.js';
 import { icon } from './icons.js';
@@ -18,9 +18,6 @@ export function stopIndex(ayahs, words, status) {
   const k = ayahs.findIndex((g) => bad.has(g));
   return k < 0 ? ayahs.length : k;
 }
-
-// «٥ آيات» / «١١ آية»
-const ayatCount = (n) => `${ar(n)} ${n === 1 ? 'آية' : n === 2 ? 'آيتين' : n <= 10 ? 'آيات' : 'آية'}`;
 
 // أول آية في السورة لم تُحفظ بعد (نبدأ التسميع منها)
 export function firstUnknown(s, known = memorizedSet()) {
@@ -139,16 +136,19 @@ export function renderPlacement(ctx, { s, returnTo = 'home' }) {
     }
     const today = dayKey();
     update((x) => {
+      const before = completeSet(x);
       const set = new Set(x.memorized);
       known.forEach((g) => set.add(g));
       // محفوظ قديم: يدخل المراجعة البعيدة (مش القريبة، حتى لا تتضخم لو حافظ كتير)
       x.memorized = [...set];
-      x.settings.startSurah = s;
+      // باقي السورة يتحفظ الأول (السورة اللي بتكمّلها)؛ لو خلصت بتتسجل وتنتهي
+      x.settings.focusSurah = s;
+      noteCompleted(x, before, today);
       // نعيد بناء ورد اليوم ليبدأ من مكان ما وقف (لو لم يُعتمد حفظ اليوم بعد)
       if (x.days[today] && !x.days[today].tasks.new.done) delete x.days[today];
     });
     const startA = from + k;
-    toast(k === ayahs.length ? `تمام — سورة ${surahName(s)} اتسجلت محفوظة` : `تمام — الحفظ الجديد يبدأ من ${surahName(s)} ${ar(startA)}`);
+    toast(k === ayahs.length ? `ما شاء الله — سورة ${surahName(s)} اتسجلت محفوظة` : `تمام — الحفظ الجديد يبدأ من ${surahName(s)} ${ar(startA)}`);
     go('home');
   }
 

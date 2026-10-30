@@ -249,6 +249,13 @@ export function describeAyahs(list) {
   return parts.length > 3 ? `${parts.slice(0, 3).join('، ')} و${parts.length - 3} مواضع أخرى` : parts.join('، ');
 }
 
+// «آية» / «آيتين» / «٥ آيات» / «١١ آية»
+export function ayatLabel(n) {
+  if (n === 1) return 'آية واحدة';
+  if (n === 2) return 'آيتين';
+  return `${toArabicDigits(n)} ${n >= 3 && n <= 10 ? 'آيات' : 'آية'}`;
+}
+
 export function toArabicDigits(n) {
   return String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 }

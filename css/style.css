@@ -808,3 +808,35 @@ button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary
 .ayah-stepper .icon-btn:disabled { opacity: .4; cursor: default; }
 .ayah-stepper output { min-width: 7.5em; text-align: center; font-weight: 700; font-size: 1.125rem; color: var(--primary); }
 .know-btn { margin-top: var(--s2); }
+
+/* ================= محفوظاتي ================= */
+.surah-list { list-style: none; margin: var(--s3) 0 0; padding: 0; display: grid; gap: var(--s2); }
+.surah-list .empty { padding: var(--s4); text-align: center; }
+.surah-row {
+  width: 100%; display: flex; align-items: center; gap: var(--s3); min-height: 60px; padding: var(--s2) var(--s3);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  color: var(--ink); font: inherit; text-align: start; cursor: pointer; transition: background var(--t-fast);
+}
+.surah-row:hover { background: var(--surface-2); }
+.surah-row .num {
+  flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--surface-2); color: var(--muted); font-size: .8125rem; font-weight: 700;
+}
+.surah-row.done .num { background: var(--ok-bg); color: var(--ok); }
+.surah-row.focus { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.surah-row .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.surah-row .info b { font-size: 1rem; }
+.surah-row .bar { display: block; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 4px; }
+.surah-row .bar i { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+.surah-row > .ic { color: var(--muted); flex: none; }
+.sheet-actions { display: grid; gap: var(--s2); }
+.sheet-actions .btn { justify-content: center; }
+.sheet-actions p { margin: -4px 0 var(--s1); }
+.link-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding: 0; margin-top: var(--s1);
+  background: none; border: 0; color: var(--primary); font: 600 .875rem var(--font-ui); cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+.focus-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: var(--s1) 0 0; color: var(--primary); }
+.focus-line .link-btn { margin: 0; min-height: 32px; }
+.celebrate { background: var(--ok-bg); border-radius: var(--radius-sm); padding: var(--s3); font-weight: 700; }

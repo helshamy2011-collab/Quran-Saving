@@ -70,7 +70,49 @@ export function memorizedSet(state = getState()) {
 
 export function remainingNew(state = getState()) {
   const known = memorizedSet(state);
+  // سورة اخترتها تكمّل حفظها: الورد منها هي لحد ما تخلص (حتى لو مش في ترتيب الخطة)
+  const focus = state.settings.focusSurah;
+  if (focus) {
+    const rest = surahAyahs(focus).filter((g) => !known.has(g));
+    if (rest.length) return rest;
+  }
   return planOrder(state.settings).filter((g) => !known.has(g));
+}
+
+const surahAyahs = (s) => Array.from({ length: ayahCount(s) }, (_, i) => toGlobal(s, i + 1));
+
+// تقدّم كل سورة: [{ s, total, known }]
+export function surahProgress(state = getState()) {
+  const known = memorizedSet(state);
+  const out = [];
+  for (let s = 1; s <= 114; s++) {
+    const list = surahAyahs(s);
+    out.push({ s, total: list.length, known: list.filter((g) => known.has(g)).length });
+  }
+  return out;
+}
+
+const completeSet = (state) => new Set(surahProgress(state).filter((x) => x.known === x.total).map((x) => x.s));
+
+// بعد تسجيل محفوظ جديد: السور اللي اكتملت للتو (تتسجل بتاريخها، وسورة التركيز تنتهي)
+// before: السور الكاملة قبل التسجيل
+export function noteCompleted(s, before, today = dayKey()) {
+  const done = [...completeSet(s)].filter((x) => !before.has(x));
+  s.surahDates ||= {};
+  for (const x of done) s.surahDates[x] ||= today;
+  if (s.settings.focusSurah && done.includes(s.settings.focusSurah)) s.settings.focusSurah = null;
+  return done;
+}
+
+export { completeSet };
+
+// اختيار سورة تكمّل حفظها (null لإلغاء الاختيار)؛ ورد اليوم يتعاد حسابه لو لم يُعتمد
+export function setFocus(surah) {
+  const today = dayKey();
+  update((s) => {
+    s.settings.focusSurah = surah;
+    if (s.days[today] && !s.days[today].tasks.new.done) delete s.days[today];
+  });
 }
 
 function nearAyahs(state, today) {
@@ -204,9 +246,12 @@ export function recordPractice({ label, memory = [], reading = [], score }) {
   });
 }
 
+// يُرجع السور اللي اكتمل حفظها بالجلسة دي
 export function recordSession({ taskId, label, words, status, score, reading = false, confused = [] }) {
   const today = dayKey();
+  let completed = [];
   update((s) => {
+    const before = completeSet(s);
     if (reading) applyReading(s, words, status, today);
     else applyWeak(s, words, status, today, confused);
 
@@ -236,7 +281,9 @@ export function recordSession({ taskId, label, words, status, score, reading = f
 
     s.sessions.unshift({ date: today, time: Date.now(), taskId, label, ...score });
     s.sessions = s.sessions.slice(0, 300);
+    completed = noteCompleted(s, before, today);
   });
+  return completed;
 }
 
 // ---------- إحصاءات ----------
