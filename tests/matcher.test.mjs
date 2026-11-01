@@ -460,3 +460,85 @@ test('لا كلمة قرآنية مختلفة من ٣ حروف فأقل تُقب
   }
   assert.deepEqual(leaks.slice(0, 10), []);
 });
+
+// ---------- بداية المقطع: استعادة المزامنة لما النتائج تصل مقسّمة ----------
+// قبل: المطابقة تتعلق عند أول كلمة لو سقطت أو قيل غيرها ووصلت النتائج كلمة كلمة
+const feedParts = (m, parts) => parts.forEach((x) => say(m, x));
+const naba = () => new Matcher(words(78, 1, 3)); // عم يتساءلون عن النبإ العظيم الذي هم فيه مختلفون
+
+test('سقوط أول كلمة والنتائج كلمة كلمة: تُستعاد المزامنة، والأولى «لم تُسمع» لا «صحيحة»', () => {
+  const m = naba();
+  feedParts(m, ['يتساءلون', 'عن', 'النبأ', 'العظيم', 'الذي هم فيه مختلفون']);
+  assert.ok(m.done, m.status.join(','));
+  assert.equal(m.status[0], STATUS.UNSURE);
+  assert.equal(m.heardState(0), 'not-heard');
+  assert.ok(m.status.slice(1).every((x) => x === STATUS.OK));
+});
+
+test('استبدال أول كلمة بكلمة قصيرة والنتائج مقسّمة: لا تتحول لصحيحة، والمسموع محفوظ في موضعها', () => {
+  const m = naba();
+  feedParts(m, ['لا', 'يتساءلون', 'عن النبأ', 'العظيم الذي هم فيه مختلفون']);
+  assert.ok(m.done);
+  assert.notEqual(m.status[0], STATUS.OK);
+  assert.equal(m.heardState(0), 'heard-unclear');
+  assert.deepEqual(m.evidence[0].map((e) => e.raw), ['لا']);
+  assert.equal(m.score().mistakes, 0);
+});
+
+test('سقوط أول كلمتين: القفزة الأكبر تحتاج ثلاث كلمات متتالية، وتُستعاد عبر نتائج مختلفة', () => {
+  const m = naba();
+  feedParts(m, ['عن', 'النبأ', 'العظيم', 'الذي هم فيه مختلفون']);
+  assert.ok(m.done, m.status.join(','));
+  assert.deepEqual(m.status.slice(0, 2), [STATUS.UNSURE, STATUS.UNSURE]);
+  assert.ok(m.status.slice(2).every((x) => x === STATUS.OK));
+});
+
+test('سقوط ٣ كلمات من البداية = أسقطها (خطأ) — التجاوز لا يجعلها صحيحة', () => {
+  const m = naba();
+  feedParts(m, ['النبأ العظيم', 'الذي', 'هم فيه مختلفون']);
+  assert.ok(m.done);
+  assert.deepEqual(m.status.slice(0, 3), [STATUS.SKIPPED, STATUS.SKIPPED, STATUS.SKIPPED]);
+  assert.equal(m.score().mistakes, 3);
+});
+
+test('الاستعاذة مقسّمة قبل بداية صحيحة: لا قفزة كاذبة رغم أن «بالله من» تطابق «الله من» داخل الآية', () => {
+  // البقرة ٢٧: الذين ينقضون عهد الله من بعد ميثاقه — «الله من» في الكلمة الرابعة
+  for (const parts of [['أعوذ بالله', 'من الشيطان', 'الرجيم', 'الذين ينقضون', 'عهد الله من بعد ميثاقه'], ['أعوذ بالله من الشيطان', 'الرجيم الذين', 'ينقضون عهد', 'الله من بعد ميثاقه']]) {
+    const m = new Matcher(words(2, 27, 27));
+    feedParts(m, parts);
+    assert.deepEqual(m.status.slice(0, 7), Array(7).fill(STATUS.OK), parts.join(' / '));
+  }
+  // ونفس الآية مع سقوط أول كلمة: كانت تتعلق تماماً، الآن تُستعاد والأولى غير صحيحة
+  const m = new Matcher(words(2, 27, 27));
+  feedParts(m, ['أعوذ بالله', 'من الشيطان الرجيم', 'ينقضون', 'عهد الله من بعد']);
+  assert.equal(m.status[0], STATUS.UNSURE);
+  assert.deepEqual(m.status.slice(1, 6), Array(5).fill(STATUS.OK));
+});
+
+test('الاستعاذة ثم سقوط أول كلمة (نتائج مقسّمة): تُستعاد المزامنة والأولى غير صحيحة', () => {
+  const m = naba();
+  feedParts(m, ['أعوذ بالله من الشيطان', 'الرجيم', 'يتساءلون', 'عن النبأ العظيم', 'الذي هم فيه مختلفون']);
+  assert.ok(m.done);
+  assert.notEqual(m.status[0], STATUS.OK);
+  assert.ok(m.status.slice(1).every((x) => x === STATUS.OK));
+});
+
+test('كلمات قصيرة في البداية: سقوط «قل» في «قل هو الله أحد» والنتائج كلمة كلمة', () => {
+  const m = new Matcher(words(112, 1, 2));
+  feedParts(m, ['هو', 'الله', 'أحد', 'الله الصمد']);
+  assert.ok(m.done, m.status.join(','));
+  assert.equal(m.status[0], STATUS.UNSURE);
+  assert.ok(m.status.slice(1).every((x) => x === STATUS.OK));
+});
+
+test('نفس الكلام بأي تقسيم للنتائج يعطي نفس الحكم', () => {
+  const text = 'لا يتساءلون عن النبأ العظيم الذي هم فيه مختلفون'.split(' ');
+  const splits = [[9], [1, 8], [1, 1, 7], [2, 2, 2, 3], [1, 1, 1, 1, 1, 1, 1, 1, 1], [3, 6]];
+  const results = splits.map((sz) => {
+    const m = naba();
+    let i = 0;
+    for (const n of sz) { m.feedFinal(text.slice(i, i + n)); i += n; }
+    return m.status.join(',');
+  });
+  assert.equal(new Set(results).size, 1, results.join(' | '));
+});

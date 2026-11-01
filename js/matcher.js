@@ -273,10 +273,21 @@ export class Matcher {
 
     if (!commit) return 0;
 
-    // في بداية المقطع كثيراً ما يبدأ القارئ بالاستعاذة أو البسملة أو بآية قبلها:
-    // نتجاهل ما لا يطابق، ولا نعتبر الكلمة الأولى ساقطة إلا لو تأكدنا من الكلمتين التاليتين
+    // في بداية المقطع كثيراً ما يبدأ القارئ بالاستعاذة أو البسملة أو بآية قبلها: نتجاهل ما لا يطابق،
+    // ولا نتجاوز الكلمات الأولى (سقطت أو قيل غيرها) إلا بدليل: كلمتان مسموعتان متتاليتان تطابقان كلمتين
+    // متتاليتين بعدها. الكلمتان قد تصلان في نتيجة واحدة أو في نتيجتين من التعرف الصوتي (المحرك يقسّم كلامه)
     if (this.starts[p] && this.missStreak === 0) {
-      if (W[p + 2] && nextHeard && wordMatches(heard, W[p + 1]) && wordMatches(nextHeard, W[p + 2])) return this.skipTo(1, rawOf(i));
+      const anchor = this.startAnchor(tokens, i);
+      if (anchor) {
+        // الكلمات المسموعة قبل الحالية (من نتائج سابقة) اللي هي بداية المزامنة: تُسحب من غير المنسوب
+        // وتُحسب لمواضعها، والكلمات قبلها (ساقطة أو قيل غيرها) تُحكم بنفس قواعد التجاوز العادية
+        const prevs = anchor.prevAt.map((j) => this.unplaced[j]);
+        this.unplaced = this.unplaced.filter((_, j) => !anchor.prevAt.includes(j));
+        if (!prevs.length) return this.skipTo(anchor.k, rawOf(i));
+        this.skipTo(anchor.k, prevs[0].raw);
+        for (const h of prevs.slice(1)) { this.set(this.pos, STATUS.OK); this.matchedRaw[this.pos] = h.raw; this.pos++; }
+        return this.step(tokens, i, commit); // الحالية تطابق الكلمة التالية مباشرة
+      }
       hold();
       return 1;
     }
@@ -320,6 +331,31 @@ export class Matcher {
       this.missHeard = [];
     }
     return 1;
+  }
+
+  // استعادة المزامنة عند بداية المقطع: أقرب موضع k ≥ 1 تطابقه كلمات مسموعة متتالية تشمل الكلمة الحالية.
+  // الدليل يزيد مع حجم القفزة: كلمتان لتجاوز كلمة واحدة، وثلاث لتجاوز أكثر (الكلمات الشائعة مثل
+  // «الله» و«من» تتكرر كثيراً، فكلمتان من الاستعاذة قد تطابقان موضعاً بعيداً بالصدفة).
+  // الكلمات المتتالية قد تأتي من نتائج سابقة للتعرف الصوتي (غير منسوبة بعد) أو من النتيجة الحالية.
+  // يُرجع { k, prevAt: مواضع الكلمات السابقة المستخدمة في unplaced } أو null
+  startAnchor(tokens, i) {
+    const W = this.words;
+    const p = this.pos;
+    // آخر كلمتين غير منسوبتين (بدون الحروف المنفردة) + الحالية + ما بعدها في نفس النتيجة
+    const prevAt = [];
+    for (let j = this.unplaced.length - 1; j >= 0 && prevAt.length < 2; j--) if (this.unplaced[j].norm.length > 1) prevAt.unshift(j);
+    const seq = [...prevAt.map((j) => this.unplaced[j].norm), ...tokens.slice(i, i + 3)];
+    const c = prevAt.length; // موضع الكلمة الحالية في seq
+    for (let k = 1; k <= 12 && p + k < W.length; k++) {
+      const need = k === 1 ? 2 : 3;
+      for (let o = Math.max(0, c - need + 1); o <= c; o++) {
+        if (o + need > seq.length || p + k + need > W.length) continue;
+        let ok = true;
+        for (let t = 0; t < need && ok; t++) ok = wordMatches(seq[o + t], W[p + k + t]);
+        if (ok) return { k, prevAt: prevAt.slice(o, c) };
+      }
+    }
+    return null;
   }
 
   // الكلمات من المؤشر حتى p+k-1 سقطت (أو قيل مكان أولها كلمة خطأ)، والكلمة p+k صحيحة
