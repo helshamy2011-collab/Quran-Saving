@@ -218,6 +218,14 @@ export class Matcher {
     const rawOf = (j) => this.rawTok?.[j] ?? tokens[j];
     // كلمة مسموعة لم تطابق موضعها: تُحفظ دليلاً حتى تُنسب لموضع (لا تُحذف)
     const hold = () => { if (commit) this.unplaced.push({ raw: rawOf(i), norm: heard }); };
+    // في بداية المقطع، لو سبقها كلام غير مطابق (استعاذة، بسملة، آية قبلها…) فقد تكون الكلمة من هذا الكلام
+    // («…من الشيطان الرجيم» قبل «من كفر»، «بسم الله…» قبل «الله لا إله»): مطابقة أول كلمة لا تُقبل وحدها
+    // إلا لو أكدتها الكلمة المسموعة التي بعدها (بأي طريقة طابقت: مباشرة، موصولة، أو كلمتان مدموجتان).
+    // المطابقة غير المؤكدة لا تُقبل، ويكمل الحكم لقاعدة بداية المقطع: إما startAnchor يجد دليلاً (منه أن
+    // الكلمة المنتظرة + الحالية = الأولى والثانية، k = 0)، أو تنتظر الكلمة كمرشّحة
+    const preface = this.starts[p] && this.missStreak === 0 && this.unplaced.some((u) => u.norm.length > 1);
+    // used: كلمات مسموعة استُهلكت، got: كلمات متوقعة طوبقت
+    const unconfirmed = (used, got) => preface && !!W[p + got] && !(tokens[i + used] && this.confirms(tokens[i + used], p + got));
 
     const accept = (count, rawHeard = rawOf(i)) => {
       // ما سُمع قبلها ولم يطابق (تردد، ضوضاء، استعاذة…) يُحفظ دليلاً «قبلها» دون تغيير الحكم
@@ -263,13 +271,13 @@ export class Matcher {
       const joined = joinedWord(W[p], W[p + 1]);
       if (heard.length >= Math.min(...joined.forms.map((f) => f.length))) {
         const js = wordScore(heard, joined);
-        if (js && js > single) { accept(2); return 1; }
+        if (js && js > single && !unconfirmed(1, 2)) { accept(2); return 1; }
       }
     }
     // 2) مطابقة مباشرة
-    if (single) { accept(1); return 1; }
+    if (single && !unconfirmed(1, 1)) { accept(1); return 1; }
     // 3) كلمتان مسموعتان = كلمة واحدة في المصحف (يا أيها → يٰٓأيها)
-    if (nextHeard && wordMatches(heard + nextHeard, W[p])) { accept(1, `${rawOf(i)} ${rawOf(i + 1)}`); return 2; }
+    if (nextHeard && wordMatches(heard + nextHeard, W[p]) && !unconfirmed(2, 1)) { accept(1, `${rawOf(i)} ${rawOf(i + 1)}`); return 2; }
 
     if (!commit) return 0;
 
@@ -333,8 +341,9 @@ export class Matcher {
     return 1;
   }
 
-  // استعادة المزامنة عند بداية المقطع: أقرب موضع k ≥ 1 تطابقه كلمات مسموعة متتالية تشمل الكلمة الحالية.
-  // الدليل يزيد مع حجم القفزة: كلمتان لتجاوز كلمة واحدة، وثلاث لتجاوز أكثر (الكلمات الشائعة مثل
+  // استعادة المزامنة عند بداية المقطع: أقرب موضع k ≥ 0 تطابقه كلمات مسموعة متتالية تشمل الكلمة الحالية
+  // (k = 0: الكلمة الأولى نفسها، بعد كلام سابق غير مطابق — تحتاج تأكيد الكلمة التالية).
+  // الدليل يزيد مع حجم القفزة: كلمتان لتجاوز كلمة واحدة أو صفر، وثلاث لتجاوز أكثر (الكلمات الشائعة مثل
   // «الله» و«من» تتكرر كثيراً، فكلمتان من الاستعاذة قد تطابقان موضعاً بعيداً بالصدفة).
   // الكلمات المتتالية قد تأتي من نتائج سابقة للتعرف الصوتي (غير منسوبة بعد) أو من النتيجة الحالية.
   // يُرجع { k, prevAt: مواضع الكلمات السابقة المستخدمة في unplaced } أو null
@@ -346,8 +355,8 @@ export class Matcher {
     for (let j = this.unplaced.length - 1; j >= 0 && prevAt.length < 2; j--) if (this.unplaced[j].norm.length > 1) prevAt.unshift(j);
     const seq = [...prevAt.map((j) => this.unplaced[j].norm), ...tokens.slice(i, i + 3)];
     const c = prevAt.length; // موضع الكلمة الحالية في seq
-    for (let k = 1; k <= 12 && p + k < W.length; k++) {
-      const need = k === 1 ? 2 : 3;
+    for (let k = 0; k <= 12 && p + k < W.length; k++) {
+      const need = k <= 1 ? 2 : 3;
       for (let o = Math.max(0, c - need + 1); o <= c; o++) {
         if (o + need > seq.length || p + k + need > W.length) continue;
         let ok = true;
@@ -356,6 +365,14 @@ export class Matcher {
       }
     }
     return null;
+  }
+
+  // هل الكلمة المسموعة تطابق الكلمة j (أو j وما بعدها موصولتين، كالإدغام)؟
+  confirms(heard, j) {
+    const W = this.words;
+    if (!W[j]) return false;
+    if (wordMatches(heard, W[j])) return true;
+    return !!W[j + 1] && wordScore(heard, joinedWord(W[j], W[j + 1])) > 0;
   }
 
   // الكلمات من المؤشر حتى p+k-1 سقطت (أو قيل مكان أولها كلمة خطأ)، والكلمة p+k صحيحة

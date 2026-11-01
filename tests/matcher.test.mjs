@@ -542,3 +542,69 @@ test('نفس الكلام بأي تقسيم للنتائج يعطي نفس ال�
   });
   assert.equal(new Set(results).size, 1, results.join(' | '));
 });
+
+// ---------- كلام قبل المقطع ينتهي بكلمة تطابق أول كلمة في الآية ----------
+// «…من الشيطان الرجيم» قبل «من كفر»، «بسم الله…» قبل «الله لا إله»: كلمة التمهيد كانت تُحسب أول كلمة
+const ISTIADHA = 'أعوذ بالله من الشيطان الرجيم';
+const BASMALA = 'بسم الله الرحمن الرحيم';
+const allOk = (m, n) => assert.deepEqual(m.status.slice(0, n), Array(n).fill(STATUS.OK), m.status.slice(0, n).join(','));
+
+test('الاستعاذة تنتهي بـ«من» والآية تبدأ بـ«من» (النحل ١٠٦): لا تُحسب كلمة الاستعاذة، نتيجة واحدة أو مقسّمة', () => {
+  for (const parts of [[`${ISTIADHA} من كفر بالله من بعد`], [ISTIADHA, 'من كفر بالله من بعد'], ['أعوذ بالله من', 'الشيطان الرجيم', 'من', 'كفر', 'بالله من بعد']]) {
+    const m = new Matcher(words(16, 106, 106));
+    feedParts(m, parts);
+    allOk(m, 5);
+    assert.ok(m.evidence[0].every((e) => e.place === 'before')); // كلام الاستعاذة محفوظ «قبلها»
+  }
+});
+
+test('البسملة قبل آية تبدأ بكلمة منها: آية الكرسي «الله…» والرحمن «الرحمن…»', () => {
+  const m = new Matcher(words(2, 255, 255));
+  feedParts(m, [BASMALA, 'الله لا إله إلا هو']);
+  allOk(m, 5);
+  const r = new Matcher(words(55, 1, 2));
+  feedParts(r, [BASMALA, 'الرحمن', 'علم القرآن']);
+  allOk(r, 3);
+});
+
+test('الاستعاذة قبل «الشيطان يعدكم» (البقرة ٢٦٨) بنفس التقسيم الذي كان يسبب «تردد»', () => {
+  const m = new Matcher(words(2, 268, 268));
+  feedParts(m, [ISTIADHA, 'الشيطان يعدكم الفقر']);
+  allOk(m, 3);
+});
+
+test('بداية مباشرة بالآية (بدون تمهيد): الكلمة الأولى تظهر فوراً حتى في نتيجة من كلمة واحدة', () => {
+  const m = new Matcher(words(16, 106, 106));
+  say(m, 'من');
+  assert.equal(m.status[0], STATUS.OK);
+  const i = new Matcher(words(2, 255, 255));
+  assert.equal(i.feedInterim(['الله']), 1); // النتائج المؤقتة كمان
+});
+
+test('بعد تمهيد: النتيجة المؤقتة لا تكشف الكلمة الأولى قبل تأكيدها، وتكشفها مع التي بعدها', () => {
+  const m = new Matcher(words(16, 106, 106));
+  say(m, ISTIADHA);
+  assert.equal(m.feedInterim(['من']), 0);
+  assert.equal(m.pos, 0);
+  assert.equal(m.feedInterim(['من', 'كفر']), 2);
+  assert.equal(m.pos, 2);
+});
+
+test('الاستعاذة ثم البسملة ثم الفاتحة (البسملة هي الآية الأولى): كلها صحيحة', () => {
+  const m = new Matcher(words(1, 1, 2));
+  feedParts(m, [ISTIADHA, BASMALA, 'الحمد لله رب العالمين']);
+  allOk(m, 8);
+});
+
+test('البسملة ثم «القارعة» آخر النتيجة ثم «ما القارعة وما» في التالية: المزامنة تُحسم بالكلمة المنتظرة', () => {
+  const m = new Matcher(words(101, 1, 3));
+  feedParts(m, [`${BASMALA} القارعة`, 'ما القارعة وما']);
+  allOk(m, 4);
+});
+
+test('سقوط أول كلمة بعد استعاذة تنتهي بنفس الكلمة: كلمة الاستعاذة لا تُقبل مكانها', () => {
+  const m = new Matcher(words(16, 106, 106));
+  feedParts(m, [ISTIADHA, 'كفر بالله من بعد']);
+  assert.notEqual(m.status[0], STATUS.OK);
+  assert.deepEqual(m.status.slice(1, 5), Array(4).fill(STATUS.OK));
+});
