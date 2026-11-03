@@ -1,5 +1,5 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v20'; // نفس APP_VERSION في js/app.js
+const CACHE = 'hifz-v21'; // نفس APP_VERSION في js/app.js
 const ASSETS = [
   './',
   'index.html',
@@ -40,7 +40,7 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// التفسير ومعاني الكلمات (data/tafsir، data/gharib) لا يُحمَّلان مسبقاً لحجمهما، ويُحفظان أول ما تفتح سورة
+// التفسير ومعاني الكلمات وألوان التجويد (data/tafsir، data/gharib، data/tajweed.json) لا تُحمَّل مسبقاً لحجمهما، وتُحفظ أول ما تُستخدم
 // ملفات البرنامج: الشبكة أولاً ثم النسخة المحفوظة (حتى تصل التحديثات)
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);

@@ -84,3 +84,23 @@ test('تنوين الضم المتتابع بحرف موجود في خط الم�
   assert.equal(Q.normalizeArabic(w.text), 'عظيم');
   assert.equal(Q.quranGlyphs('مَرَضٞ'), 'مَرَضࣱ');
 });
+
+test('مصحف التجويد: حروف الكلمة بحركاتها، وألوان أحكامها على نص المصحف نفسه', async () => {
+  assert.deepEqual(Q.letterClusters('ٱلرَّحۡمَٰنِ'), ['ٱ', 'ل', 'رَّ', 'حۡ', 'مَٰ', 'نِ']);
+  const data = JSON.parse(await readFile(new URL('../data/tajweed.json', import.meta.url), 'utf8'));
+  // كل رموز الكلمة بعدد حروفها، ولا تلوين يغيّر النص
+  for (const [g, row] of Object.entries(data.ayahs)) {
+    const words = Q.ayahWords(Number(g));
+    assert.equal(row.length, words.length, `آية ${g}`);
+    row.forEach((codes, k) => { if (codes) assert.equal(codes.length, Q.letterClusters(words[k].text).length, `آية ${g} كلمة ${k}`); });
+  }
+  globalThis.localStorage = { getItem: () => 'tajweed', setItem() {} };
+  await M.loadTajweed();
+  const w = Q.ayahWords(0)[3]; // ٱلرَّحِيمِ
+  const html = M.wordInner(w, 0, 3);
+  assert.equal(html.replace(/<[^>]+>/g, ''), w.text);
+  assert.ok(html.includes('tj-silent') && html.includes('tj-madd246'), html);
+  globalThis.localStorage = { getItem: () => 'plain', setItem() {} };
+  assert.equal(M.wordInner(w, 0, 3), w.text);
+  delete globalThis.localStorage;
+});

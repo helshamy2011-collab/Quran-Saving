@@ -5,7 +5,7 @@ import { ayahWords, fromGlobal, surahName, toArabicDigits as ar } from './quran.
 import { Matcher, STATUS, isMistake } from './matcher.js';
 import { Listener, speechSupported } from './speech.js';
 import { icon } from './icons.js';
-import { renderPages, autoFit, getView } from './mushaf.js';
+import { renderPages, autoFit, getView, wordInner } from './mushaf.js';
 
 export const STATUS_LABEL = {
   [STATUS.WRONG]: 'خطأ',
@@ -130,7 +130,7 @@ export class Recitation {
       const wk = this.weak[`${g}:${w}`];
       const mark = this.warnWeak && wk && !wk.mastered ? ' weak-mark' : '';
       const shown = this.visible[idx];
-      return `<span class="w ${shown ? 'shown' : 'hidden'}${mark}" data-i="${idx}"${shown ? '' : ' aria-hidden="true"'}>${this.words[idx].text}</span>`;
+      return `<span class="w ${shown ? 'shown' : 'hidden'}${mark}" data-i="${idx}"${shown ? '' : ' aria-hidden="true"'}>${wordInner(this.words[idx], g, w)}</span>`;
     };
     const marker = (g) => `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(fromGlobal(g).a)} — التفسير">﴿${ar(fromGlobal(g).a)}﴾</button>`;
     const pages = this.layout === 'pages';

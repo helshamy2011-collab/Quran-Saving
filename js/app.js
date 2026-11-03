@@ -15,12 +15,14 @@ import { icon } from './icons.js';
 import { renderGuided } from './guided.js';
 import { renderQuiz } from './quiz.js';
 import { renderPlacement } from './placement.js';
-import { renderPages, autoFit, getView, setView, tafsirOf, gharibOf } from './mushaf.js';
+import {
+  renderPages, autoFit, getView, setView, tafsirOf, gharibOf, wordInner, getColorMode, setColorMode, loadTajweed, tajweedLegendHtml,
+} from './mushaf.js';
 import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 20;
+export const APP_VERSION = 21;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -251,7 +253,7 @@ function renderStudy() {
   const reciter = getState().settings.reciter;
   const studyWord = (w, g, i) => {
     const wk = weak[`${g}:${i}`];
-    return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}" data-g="${g}" data-k="${i}">${w.text}</span>`;
+    return `<span class="w ${wk && !wk.mastered ? 'weak' : ''}" data-g="${g}" data-k="${i}">${wordInner(w, g, i)}</span>`;
   };
   const mushafHtml = () => {
     if (getView() === 'pages') return renderPages(t.ayahs, { word: (idx, w, g, k) => studyWord(w, g, k) });
@@ -1029,6 +1031,16 @@ function renderMushaf({ page } = {}) {
       <label class="page-field"><span>ص</span><input type="text" id="pg" inputmode="numeric" autocomplete="off" aria-label="رقم الصفحة من ${ar(PAGES)}"></label>
       <button type="button" class="icon-btn" data-act="next" aria-label="الصفحة التالية">${icon('chevronL', { size: 22 })}</button>
     </div>
+    <div class="reader-style">
+      <div class="segmented two" role="radiogroup" aria-label="شكل المصحف">
+        <label><input type="radio" name="color" value="plain" ${getColorMode() === 'plain' ? 'checked' : ''}><span>${icon('book', { size: 16 })}عادي</span></label>
+        <label><input type="radio" name="color" value="tajweed" ${getColorMode() === 'tajweed' ? 'checked' : ''}><span>${icon('palette', { size: 16 })}ملوّن بالتجويد</span></label>
+      </div>
+      <details class="tj-key" ${getColorMode() === 'tajweed' ? '' : 'hidden'}>
+        <summary>مفتاح الألوان</summary>
+        ${tajweedLegendHtml()}
+      </details>
+    </div>
     <div class="mushaf paged reader" id="mushaf"></div>
     <div class="row actions reader-actions">
       <button type="button" class="btn primary" data-act="recite">${icon('mic')}سمّع الصفحة دي</button>
@@ -1051,7 +1063,7 @@ function renderMushaf({ page } = {}) {
     p = n;
     localStorage.setItem('mushaf-page', String(p));
     const list = pageAyahs(p);
-    el.innerHTML = renderPages(list, { word: (i, w, g, k) => `<span class="w" data-g="${g}" data-k="${k}">${w.text}</span>` });
+    el.innerHTML = renderPages(list, { word: (i, w, g, k) => `<span class="w" data-g="${g}" data-k="${k}">${wordInner(w, g, k)}</span>` });
     unfit?.();
     unfit = autoFit(el);
     pg.value = ar(p);
@@ -1068,6 +1080,24 @@ function renderMushaf({ page } = {}) {
     audioEl.play().catch(() => {});
   };
   show(p);
+  // شكل المصحف: عادي أو ملوّن بأحكام التجويد (يسري على كل الشاشات)
+  const key = app.querySelector('.tj-key');
+  app.querySelectorAll('input[name=color]').forEach((r) => {
+    r.onchange = async () => {
+      const mode = r.value;
+      if (mode === 'tajweed') {
+        try { await loadTajweed(); } catch {
+          toast('تعذر تحميل ألوان التجويد — تأكد من الاتصال بالإنترنت');
+          app.querySelector('input[name=color][value=plain]').checked = true;
+          return;
+        }
+      }
+      setColorMode(mode);
+      key.hidden = mode !== 'tajweed';
+      el.innerHTML = '';
+      show(p);
+    };
+  });
   // يقبل الأرقام العربية والإنجليزية
   pg.onchange = () => show(Number(pg.value.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '')) || p);
   pg.onfocus = () => pg.select();
@@ -1642,6 +1672,8 @@ async function boot() {
       else location.reload();
     });
   }
+  // ألوان التجويد لو اختارها المستخدم (بدونها يظهر المصحف عادياً)
+  if (getColorMode() === 'tajweed') await loadTajweed().catch(() => {});
   for (const el of document.querySelectorAll('[data-icon]')) el.outerHTML = icon(el.dataset.icon, { size: 22 });
   // فتح البرنامج على رابط شاشة معينة (#weak مثلاً)
   const initial = location.hash.slice(1);

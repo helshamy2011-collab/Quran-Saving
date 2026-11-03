@@ -15,6 +15,18 @@ let IMLAEI = {};             // الرسم الإملائي للكلمات ال�
 // شكله؛ سفاري بيجيبه من خط تاني فالكلمة تتقطع («عظيمٞ»). نستبدله بالحرف القياسي U+08F1 الموجود في الخط
 export const quranGlyphs = (text) => text.replace(/\u065E/g, '\u08F1');
 
+// علامات تلحق الحرف قبلها (حركات، علامات المصحف، الألف الصغيرة، التطويل)
+const CLUSTER_MARK = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u08D3-\u08FF\u0640\u200C]/;
+// تقسيم الكلمة إلى حروف بحركاتها (لتلوين التجويد على مستوى الحرف دون كسر الكلمة)
+export function letterClusters(word) {
+  const out = [];
+  for (const ch of word) {
+    if (CLUSTER_MARK.test(ch) && out.length) out[out.length - 1] += ch;
+    else out.push(ch);
+  }
+  return out;
+}
+
 export async function loadQuran() {
   if (SURAHS) return;
   const [res, lay, sim, lines, imlaei] = await Promise.all([

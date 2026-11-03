@@ -3,7 +3,7 @@
 
 import {
   ayahWords, ayahPage, ayahText, fromGlobal, surahName, toArabicDigits as ar,
-  pageAyahs, ayahLineSegs, pageHeads, hasPageLines,
+  pageAyahs, ayahLineSegs, pageHeads, hasPageLines, letterClusters,
 } from './quran.js';
 
 const VIEW_KEY = 'mushaf-view';
@@ -16,6 +16,70 @@ export function getView() {
 
 export function setView(v) {
   try { localStorage.setItem(VIEW_KEY, v); } catch { /* التخزين غير متاح */ }
+}
+
+// ---------- مصحف التجويد ----------
+// ألوان أحكام التجويد على حروف الكلمة (data/tajweed.json يبنيه tools/build-tajweed.mjs)
+const COLOR_KEY = 'mushaf-color';
+export function getColorMode() {
+  try { return localStorage.getItem(COLOR_KEY) === 'tajweed' ? 'tajweed' : 'plain'; } catch { return 'plain'; }
+}
+export function setColorMode(m) {
+  try { localStorage.setItem(COLOR_KEY, m); } catch { /* التخزين غير متاح */ }
+}
+
+// مجموعات الألوان (على طريقة مصاحف التجويد المطبوعة): الحكم ← المجموعة
+const GROUP = {
+  madda_necessary: 'madd6', madda_obligatory: 'madd45', madda_permissible: 'madd246', madda_normal: 'madd2',
+  ghunnah: 'ghunna', ikhafa: 'ghunna', ikhafa_shafawi: 'ghunna', idgham_ghunnah: 'ghunna', idgham_shafawi: 'ghunna', iqlab: 'ghunna',
+  qalaqah: 'qalqala',
+  ham_wasl: 'silent', laam_shamsiyah: 'silent', slnt: 'silent',
+  idgham_wo_ghunnah: 'silent', idgham_mutajanisayn: 'silent', idgham_mutaqaribayn: 'silent',
+};
+export const TAJWEED_LEGEND = [
+  ['madd6', 'مد لازم ٦ حركات'],
+  ['madd45', 'مد واجب ٤ أو ٥ حركات'],
+  ['madd246', 'مد جائز ٢ أو ٤ أو ٦'],
+  ['madd2', 'مد طبيعي حركتان'],
+  ['ghunna', 'غنة وإخفاء وإدغام بغنة وإقلاب'],
+  ['qalqala', 'قلقلة'],
+  ['silent', 'لا يُنطق (همزة الوصل، اللام الشمسية، الإدغام بلا غنة)'],
+];
+
+let tajweed = null;
+let tajweedLoad = null;
+export function loadTajweed() {
+  tajweedLoad ||= fetch('data/tajweed.json')
+    .then((r) => { if (!r.ok) throw new Error('tajweed'); return r.json(); })
+    .then((d) => { tajweed = { groups: d.rules.map((r) => GROUP[r]), ayahs: d.ayahs }; return true; })
+    .catch((e) => { tajweedLoad = null; throw e; });
+  return tajweedLoad;
+}
+export const tajweedReady = () => !!tajweed;
+
+// محتوى الكلمة: نصها، أو حروفها ملونة بأحكام التجويد في وضع التجويد
+export function wordInner(w, g, k) {
+  if (!tajweed || getColorMode() !== 'tajweed') return w.text;
+  const codes = tajweed.ayahs[g]?.[k];
+  if (!codes) return w.text;
+  const letters = letterClusters(w.text);
+  if (letters.length !== codes.length) return w.text;
+  let html = '';
+  let run = '';
+  let group = null;
+  const flush = () => { if (run) html += group ? `<span class="tj tj-${group}">${run}</span>` : run; run = ''; };
+  letters.forEach((ch, i) => {
+    const c = codes[i];
+    const gr = c === '0' ? null : tajweed.groups[c.charCodeAt(0) - 97] || null;
+    if (gr !== group) { flush(); group = gr; }
+    run += ch;
+  });
+  flush();
+  return html;
+}
+
+export function tajweedLegendHtml() {
+  return `<ul class="tj-legend">${TAJWEED_LEGEND.map(([g, label]) => `<li><span class="tj-dot tj-bg-${g}"></span>${label}</li>`).join('')}</ul>`;
 }
 
 // صفحات الآيات بترتيب ظهورها
@@ -35,7 +99,7 @@ export function pagesOf(ayahs) {
  * ctx(word, g, k): كلمة من باقي الصفحة (للسياق)
  * marker(g): رقم الآية
  */
-export function renderPages(ayahs, { word, ctx = (w) => `<span class="cw">${w.text}</span>`, marker = defaultMarker }) {
+export function renderPages(ayahs, { word, ctx = (w, g, k) => `<span class="cw">${wordInner(w, g, k)}</span>`, marker = defaultMarker }) {
   const start = new Map();
   let n = 0;
   for (const g of ayahs) { start.set(g, n); n += ayahWords(g).length; }

@@ -840,3 +840,35 @@ button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary
 .focus-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: var(--s1) 0 0; color: var(--primary); }
 .focus-line .link-btn { margin: 0; min-height: 32px; }
 .celebrate { background: var(--ok-bg); border-radius: var(--radius-sm); padding: var(--s3); font-weight: 700; }
+
+/* ================= مصحف التجويد ================= */
+:root {
+  --tj-madd6: #a1001e; --tj-madd45: #e0301a; --tj-madd246: #d97200; --tj-madd2: #a8801f;
+  --tj-ghunna: #12873a; --tj-qalqala: #1d64c9; --tj-silent: #9aa1a6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tj-madd6: #ff4f8b; --tj-madd45: #ff6e4f; --tj-madd246: #ffab4a; --tj-madd2: #d8b762;
+    --tj-ghunna: #52d37f; --tj-qalqala: #6eaaff; --tj-silent: #7c8784;
+  }
+}
+.tj-madd6 { color: var(--tj-madd6); } .tj-bg-madd6 { background: var(--tj-madd6); }
+.tj-madd45 { color: var(--tj-madd45); } .tj-bg-madd45 { background: var(--tj-madd45); }
+.tj-madd246 { color: var(--tj-madd246); } .tj-bg-madd246 { background: var(--tj-madd246); }
+.tj-madd2 { color: var(--tj-madd2); } .tj-bg-madd2 { background: var(--tj-madd2); }
+.tj-ghunna { color: var(--tj-ghunna); } .tj-bg-ghunna { background: var(--tj-ghunna); }
+.tj-qalqala { color: var(--tj-qalqala); } .tj-bg-qalqala { background: var(--tj-qalqala); }
+.tj-silent { color: var(--tj-silent); } .tj-bg-silent { background: var(--tj-silent); }
+/* الكلمة المخفية في التسميع تبقى مخفية بكل حروفها */
+.w.hidden .tj, .w.current:not(.shown) .tj { color: transparent; -webkit-text-fill-color: transparent; }
+/* لون حالة الكلمة (خطأ، تصحيح، تلميح…) أهم من لون التجويد */
+.w.corrected .tj, .w.wrong .tj, .w.skipped .tj, .w.hint .tj, .w.unsure .tj, .w.given .tj { color: inherit; }
+
+.reader-style { max-width: 600px; margin: 0 auto var(--s3); }
+.segmented.two { grid-template-columns: repeat(2, 1fr); }
+.tj-key { margin-top: var(--s2); }
+.tj-key summary { cursor: pointer; color: var(--primary); font-weight: 600; font-size: .875rem; min-height: var(--tap); display: flex; align-items: center; }
+.tj-legend { list-style: none; margin: 0; padding: var(--s2) var(--s3); display: grid; gap: 6px; font-size: .875rem; background: var(--surface-2); border-radius: var(--radius-sm); }
+.tj-legend li { display: flex; align-items: center; gap: var(--s2); }
+.tj-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.tj-legend .src { color: var(--muted); font-size: .75rem; }
