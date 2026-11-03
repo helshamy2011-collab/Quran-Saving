@@ -47,36 +47,48 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1513;
-    --surface: #171f1c;
-    --surface-2: #212b28;
-    --ink: #e8ece9;
-    --muted: #a3ada8;
-    --line: #2d3935;
-    --line-strong: #4a5853;
-    --primary: #48b89c;
-    --primary-hover: #5cc8ad;
-    --primary-ink: #04120d;
-    --primary-soft: #16312a;
-    --accent: #e0b04f;
-    --accent-ink: #1f1500;
-    --ok: #6fd39a;
-    --ok-bg: #15301f;
-    --bad: #ff8a7a;
-    --bad-bg: #3a1a16;
-    --warn: #f2bf62;
-    --warn-bg: #352810;
-    --warn-line: #e0a23a;
-    --hint: #c2a6f5;
-    --hint-bg: #2a2040;
-    --hidden: #34413d;
-    --focus: #79b2ff;
-    --scrim: rgba(0, 0, 0, .6);
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4);
-    color-scheme: dark;
-  }
+/* الوضع الليلي وورق المصحف: data-theme على <html> (تلقائي حسب الموبايل، أو اختيار المستخدم) */
+:root[data-theme="dark"] {
+  --bg: #0f1513;
+  --surface: #171f1c;
+  --surface-2: #212b28;
+  --ink: #e8ece9;
+  --muted: #a3ada8;
+  --line: #2d3935;
+  --line-strong: #4a5853;
+  --primary: #48b89c;
+  --primary-hover: #5cc8ad;
+  --primary-ink: #04120d;
+  --primary-soft: #16312a;
+  --accent: #e0b04f;
+  --accent-ink: #1f1500;
+  --ok: #6fd39a;
+  --ok-bg: #15301f;
+  --bad: #ff8a7a;
+  --bad-bg: #3a1a16;
+  --warn: #f2bf62;
+  --warn-bg: #352810;
+  --warn-line: #e0a23a;
+  --hint: #c2a6f5;
+  --hint-bg: #2a2040;
+  --hidden: #34413d;
+  --focus: #79b2ff;
+  --scrim: rgba(0, 0, 0, .6);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+  color-scheme: dark;
+}
+/* ورق المصحف: أصفر هادئ وحبر بني غامق للقراءة الطويلة */
+:root[data-theme="sepia"] {
+  --bg: #efe3c6;
+  --surface: #f7edd3;
+  --surface-2: #e8d9b4;
+  --ink: #3a2c18;
+  --muted: #65553b;
+  --line: #d8c59b;
+  --line-strong: #b39d6e;
+  --primary-soft: #dfe7cf;
+  --hidden: #dccb9f;
+  --shadow: 0 1px 2px rgba(60, 40, 10, .08), 0 6px 20px rgba(60, 40, 10, .07);
 }
 
 /* ================= الأساس ================= */
@@ -126,7 +138,7 @@ main:focus { outline: none; }
   padding-top: max(var(--s3), env(safe-area-inset-top));
   display: flex; align-items: center; gap: var(--s4);
 }
-@media (prefers-color-scheme: dark) { .topbar { background: var(--surface); color: var(--ink); border-bottom: 1px solid var(--line); } }
+[data-theme="dark"] .topbar { background: var(--surface); color: var(--ink); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: var(--s2); font-weight: 700; font-size: 1.125rem; }
 .brand img { border-radius: 8px; }
 
@@ -175,9 +187,9 @@ body.immersive .tabs { display: none; }
   .tabs button { padding: 0 var(--s2); gap: 6px; font-size: .875rem; }
   .brand span { display: none; }
 }
-@media (min-width: 760px) and (prefers-color-scheme: dark) {
-  .tabs button:hover { background: var(--surface-2); }
-  .tabs button[aria-current="page"] { background: var(--primary-soft); color: var(--primary); }
+@media (min-width: 760px) {
+  [data-theme="dark"] .tabs button:hover { background: var(--surface-2); }
+  [data-theme="dark"] .tabs button[aria-current="page"] { background: var(--primary-soft); color: var(--primary); }
 }
 
 .badge {
@@ -660,7 +672,7 @@ mark.diff { background: var(--warn-bg); color: var(--warn); box-shadow: inset 0 
 }
 .profile-btn #profile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-btn[aria-current="page"] { background: rgba(255, 255, 255, .22); }
-@media (prefers-color-scheme: dark) { .profile-btn { border-color: var(--line-strong); background: var(--surface-2); } }
+[data-theme="dark"] .profile-btn { border-color: var(--line-strong); background: var(--surface-2); }
 @media (min-width: 760px) { .tabs { margin-inline-start: auto; } .profile-btn { margin-inline-start: var(--s2); } }
 .avatar {
   display: inline-grid; place-items: center; flex-shrink: 0;
@@ -846,11 +858,9 @@ button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary
   --tj-madd6: #a1001e; --tj-madd45: #e0301a; --tj-madd246: #d97200; --tj-madd2: #a8801f;
   --tj-ghunna: #12873a; --tj-qalqala: #1d64c9; --tj-silent: #9aa1a6;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --tj-madd6: #ff4f8b; --tj-madd45: #ff6e4f; --tj-madd246: #ffab4a; --tj-madd2: #d8b762;
-    --tj-ghunna: #52d37f; --tj-qalqala: #6eaaff; --tj-silent: #7c8784;
-  }
+:root[data-theme="dark"] {
+  --tj-madd6: #ff4f8b; --tj-madd45: #ff6e4f; --tj-madd246: #ffab4a; --tj-madd2: #d8b762;
+  --tj-ghunna: #52d37f; --tj-qalqala: #6eaaff; --tj-silent: #7c8784;
 }
 .tj-madd6 { color: var(--tj-madd6); } .tj-bg-madd6 { background: var(--tj-madd6); }
 .tj-madd45 { color: var(--tj-madd45); } .tj-bg-madd45 { background: var(--tj-madd45); }
@@ -881,3 +891,37 @@ button.ayah-end:hover, button.ayah-end:focus-visible { background: var(--primary
   -webkit-text-stroke: var(--q-stroke) currentColor;
 }
 .page .surah-title, .page-no, .mushaf .surah-head, .ayah-end { -webkit-text-stroke: 0; }
+
+/* ================= ألوان القراءة ================= */
+.segmented.four { grid-template-columns: repeat(4, 1fr); }
+.theme-sw { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line-strong); flex: none; }
+.theme-sw.sw-auto { background: linear-gradient(135deg, #fffdf8 50%, #171f1c 50%); }
+.theme-sw.sw-light { background: #fffdf8; }
+.theme-sw.sw-dark { background: #171f1c; }
+.theme-sw.sw-sepia { background: #f1e2bb; }
+.reader-style .segmented + .segmented { margin-top: var(--s2); }
+.style-label { display: block; font-size: .8125rem; color: var(--muted); margin: var(--s2) 2px var(--s1); }
+
+/* ================= علامات «وقفت هنا» ================= */
+:root { --ribbon: #a3242b; }
+:root[data-theme="dark"] { --ribbon: #e2625b; }
+button.ayah-end.bookmarked { color: var(--ribbon); background: color-mix(in srgb, var(--ribbon) 14%, transparent); }
+.page { position: relative; }
+.page.has-mark::before { /* شريط فاصل المصحف أعلى الصفحة */
+  content: ''; position: absolute; top: -2px; left: 18px; width: 14px; height: 34px; background: var(--ribbon);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%); z-index: 1;
+}
+button.ayah-end.flash { animation: flash 1.6s var(--ease) 2; }
+@keyframes flash { 50% { background: color-mix(in srgb, var(--ribbon) 35%, transparent); } }
+.bm-list { list-style: none; margin: var(--s3) 0 0; padding: 0; display: grid; gap: var(--s2); }
+.bm-list li { display: flex; align-items: stretch; gap: var(--s1); }
+.bm-go {
+  flex: 1; display: flex; align-items: center; gap: var(--s3); text-align: start; min-height: 56px; padding: var(--s2) var(--s3);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; font: inherit; color: var(--ink);
+}
+.bm-go:hover { border-color: var(--line-strong); }
+.bm-go .ic { color: var(--ribbon); flex: none; }
+.bm-go b { display: block; }
+.bm-go small { color: var(--muted); }
+.bm-list .icon-btn { align-self: center; color: var(--muted); }
+.bm-empty { margin: var(--s3) 0 0; }

@@ -22,7 +22,7 @@ import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 22;
+export const APP_VERSION = 23;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -708,6 +708,95 @@ function compareBlock(g, h) {
   </div>`;
 }
 
+// ================= ألوان القراءة =================
+// لكل جهاز: تلقائي (حسب الموبايل)، نهاري، ليلي، أو ورق مصحف مصفّر
+const THEME_KEY = 'theme';
+const THEMES = [['auto', 'تلقائي'], ['light', 'نهاري'], ['dark', 'ليلي'], ['sepia', 'ورق']];
+const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+function getTheme() {
+  try { const t = localStorage.getItem(THEME_KEY); return THEMES.some(([v]) => v === t) ? t : 'auto'; } catch { return 'auto'; }
+}
+function applyTheme() {
+  const t = getTheme();
+  const used = t === 'auto' ? (darkMq.matches ? 'dark' : 'light') : t;
+  document.documentElement.dataset.theme = used;
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', used === 'dark' ? '#171f1c' : '#0f5c4d');
+}
+darkMq.addEventListener?.('change', applyTheme);
+applyTheme();
+const themePicker = () => `<div class="segmented four" role="radiogroup" aria-label="ألوان القراءة">
+  ${THEMES.map(([v, l]) => `<label><input type="radio" name="theme" value="${v}" ${getTheme() === v ? 'checked' : ''}><span><i class="theme-sw sw-${v}" aria-hidden="true"></i>${l}</span></label>`).join('')}
+</div>`;
+function bindThemePicker(root) {
+  root.querySelectorAll('input[name=theme]').forEach((r) => {
+    r.onchange = () => {
+      try { localStorage.setItem(THEME_KEY, r.value); } catch { /* التخزين غير متاح */ }
+      applyTheme();
+    };
+  });
+}
+
+// ================= علامات «وقفت هنا» =================
+// لكل شخص: آيات علّمها بنفسه (زي فاصل المصحف)، الأحدث أولاً
+const isBookmarked = (g) => getState().bookmarks.some((b) => b.g === g);
+function toggleBookmark(g) {
+  const on = !isBookmarked(g);
+  update((s) => {
+    s.bookmarks = s.bookmarks.filter((b) => b.g !== g);
+    if (on) s.bookmarks.unshift({ g, at: Date.now() });
+  });
+  paintBookmarks(document);
+  return on;
+}
+// يميّز رقم الآية المعلَّمة، ويحط شريط الفاصل على صفحتها
+function paintBookmarks(root) {
+  const set = new Set(getState().bookmarks.map((b) => b.g));
+  root.querySelectorAll('button.ayah-end[data-ayah]').forEach((b) => {
+    const on = set.has(Number(b.dataset.ayah));
+    b.classList.toggle('bookmarked', on);
+  });
+  root.querySelectorAll('.page[data-page]').forEach((p) => p.classList.toggle('has-mark', !!p.querySelector('button.ayah-end.bookmarked')));
+}
+function agoLabel(at) {
+  const days = Math.round((new Date(dayKey()) - new Date(dayKey(new Date(at)))) / 86400000);
+  if (days <= 0) return 'النهارده';
+  if (days === 1) return 'امبارح';
+  if (days === 2) return 'من يومين';
+  if (days <= 10) return `من ${ar(days)} أيام`;
+  return `من ${ar(days)} يوم`;
+}
+const bmLabel = (g) => `${icon('bookmark', { size: 16 })}${isBookmarked(g) ? 'شيل علامة «وقفت هنا»' : 'حط علامة «وقفت هنا»'}`;
+
+// قائمة العلامات: الانتقال لأي علامة أو حذفها، وتعليم الصفحة الحالية
+function openBookmarks({ page, onGo }) {
+  const { el, close } = openSheet({
+    title: 'العلامات',
+    iconName: 'bookmark',
+    body: '<div class="bm-body"></div>',
+    onClick: (e) => {
+      const go = e.target.closest('[data-goto]');
+      if (go) { close(); onGo(Number(go.dataset.goto)); return; }
+      const del = e.target.closest('[data-del]');
+      if (del) { toggleBookmark(Number(del.dataset.del)); paint(); return; }
+      if (e.target.closest('[data-mark-page]')) { toggleBookmark(pageAyahs(page)[0]); paint(); }
+    },
+  });
+  const body = el.querySelector('.bm-body');
+  function paint() {
+    const list = getState().bookmarks;
+    const pageMarked = list.some((b) => ayahPage(b.g) === page);
+    body.innerHTML = `
+      <button type="button" class="btn primary block" data-mark-page ${pageMarked ? 'disabled' : ''}>${icon('bookmark')}${pageMarked ? `صفحة ${ar(page)} عليها علامة` : `حط علامة على صفحة ${ar(page)}`}</button>
+      <p class="muted small">ولو عاوز آية بالظبط: اضغط على رقمها ﴿ ﴾ في الصفحة واختار «حط علامة وقفت هنا».</p>
+      ${list.length ? `<ul class="bm-list">${list.map(({ g, at }) => {
+        const { s, a } = fromGlobal(g);
+        return `<li><button type="button" class="bm-go" data-goto="${g}">${icon('bookmark', { size: 20 })}<span><b>سورة ${surahName(s)} · الآية ${ar(a)}</b><small>صفحة ${ar(ayahPage(g))} · ${agoLabel(at)}</small></span></button>
+          <button type="button" class="icon-btn" data-del="${g}" aria-label="شيل علامة ${surahName(s)} ${ar(a)}">${icon('trash', { size: 18 })}</button></li>`;
+      }).join('')}</ul>` : '<p class="muted bm-empty">مفيش علامات لسه.</p>'}`;
+  }
+  paint();
+}
+
 // نافذة منبثقة من أسفل الشاشة؛ onClick(e, close) لأزرارها
 function openSheet({ title, iconName, body, onClick, onClose }) {
   const prevFocus = document.activeElement;
@@ -767,6 +856,8 @@ function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
     onClick: (e) => {
       if (e.target.closest('[data-play]')) { close(); onPlay(g); }
       if (e.target.closest('[data-sim]')) { close(); openCompare(g); }
+      const bm = e.target.closest('[data-bm]');
+      if (bm) { const on = toggleBookmark(g); bm.innerHTML = bmLabel(g); toast(on ? 'اتحطت علامة «وقفت هنا»' : 'اتشالت العلامة'); }
       const nav = e.target.closest('[data-go]');
       if (nav) show(Number(nav.dataset.go));
     },
@@ -786,10 +877,11 @@ function openAyah(g, { onPlay = null, hideText = false, onClose } = {}) {
     const hasPrev = g > 0 && fromGlobal(g - 1).s === s;
     const hasNext = g + 1 < totalAyahs() && fromGlobal(g + 1).s === s;
     body.innerHTML = `${hideText ? '' : `<p class="q ayah-q">${ayahText(g)} <span class="ayah-end">﴿${ar(a)}﴾</span></p>`}
-      ${onPlay || (sims.length && !hideText) ? `<div class="chip-row">
+      <div class="chip-row">
         ${onPlay ? `<button type="button" class="pill" data-play>${icon('play', { size: 16 })}استمع للآية</button>` : ''}
+        <button type="button" class="pill" data-bm>${bmLabel(g)}</button>
         ${sims.length && !hideText ? `<button type="button" class="pill" data-sim>${icon('layers', { size: 16 })}متشابهة مع ${refOf(sims[0].g)}</button>` : ''}
-      </div>` : ''}
+      </div>
       <section class="tafsir" aria-live="polite"><h3>التفسير الميسر</h3><p class="muted">جارٍ التحميل…</p></section>
       <nav class="ayah-nav" aria-label="التنقل بين الآيات">
         <button type="button" class="btn" data-go="${g - 1}" ${hasPrev ? '' : 'disabled'}>${icon('chevronR', { size: 18 })}الآية ${ar(a - 1 || 1)}</button>
@@ -1040,13 +1132,17 @@ function renderMushaf({ page } = {}) {
         <summary>مفتاح الألوان</summary>
         ${tajweedLegendHtml()}
       </details>
+      <span class="style-label">ألوان القراءة</span>
+      ${themePicker()}
     </div>
     <div class="mushaf paged reader" id="mushaf"></div>
     <div class="row actions reader-actions">
       <button type="button" class="btn primary" data-act="recite">${icon('mic')}سمّع الصفحة دي</button>
       <button type="button" class="btn" data-act="read">${icon('book')}اقرأها بالنظر</button>
+      <button type="button" class="btn" data-act="marks">${icon('bookmark')}العلامات</button>
     </div>`;
   const el = document.getElementById('mushaf');
+  bindThemePicker(app);
   const pg = document.getElementById('pg');
   const ps = document.getElementById('ps');
   let unfit = null;
@@ -1064,6 +1160,7 @@ function renderMushaf({ page } = {}) {
     localStorage.setItem('mushaf-page', String(p));
     const list = pageAyahs(p);
     el.innerHTML = renderPages(list, { word: (i, w, g, k) => `<span class="w" data-g="${g}" data-k="${k}">${wordInner(w, g, k)}</span>` });
+    paintBookmarks(el);
     unfit?.();
     unfit = autoFit(el);
     pg.value = ar(p);
@@ -1115,6 +1212,18 @@ function renderMushaf({ page } = {}) {
     const act = b.dataset.act;
     if (act === 'next') show(p + 1);
     if (act === 'prev') show(p - 1);
+    if (act === 'marks') {
+      openBookmarks({
+        page: p,
+        onGo: (g) => {
+          show(ayahPage(g));
+          const m = el.querySelector(`button.ayah-end[data-ayah="${g}"]`);
+          if (!m) return;
+          m.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+          m.classList.remove('flash'); void m.offsetWidth; m.classList.add('flash');
+        },
+      });
+    }
     if (act === 'recite' || act === 'read') {
       const reading = act === 'read';
       go('recite', { taskId: 'free', label: reading ? `قراءة صفحة ${ar(p)}` : `تسميع صفحة ${ar(p)}`, ayahs: pageAyahs(p), returnTo: 'mushaf', reading });
@@ -1471,6 +1580,12 @@ function renderPlan({ welcome = false } = {}) {
       <div class="form-submit"><button class="btn primary big block" type="submit">${icon('check')}${welcome ? 'ابدأ الخطة' : 'حفظ الخطة'}</button></div>
     </form>
 
+    <section class="card">
+      <h2>ألوان القراءة</h2>
+      <p class="muted small">«تلقائي» يمشي مع إعداد الموبايل، و«ورق» لون مصفّر زي ورق المصحف يريّح العين في القراءة الطويلة.</p>
+      ${themePicker()}
+    </section>
+
     ${welcome ? '' : `<section class="card">
       <h2>ملف الحفظ والأشخاص</h2>
       <p class="muted small">احفظ ملف فيه تقدم كل الأشخاص، أو ضيف شخص جديد بخطة مستقلة.</p>
@@ -1486,6 +1601,7 @@ function renderPlan({ welcome = false } = {}) {
   `;
 
   const form = document.getElementById('pf');
+  bindThemePicker(app);
   const read = () => {
     const fd = new FormData(form);
     return {

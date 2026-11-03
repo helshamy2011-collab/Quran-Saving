@@ -34,6 +34,7 @@ function fresh() {
     weak: {},           // 'g:w' → نقطة ضعف
     readIssues: {},     // 'g:w' → كلمات صعبة حتى في القراءة بالنظر
     sessions: [],
+    bookmarks: [],      // علامات «وقفت هنا»: [{ g, at }] الأحدث أولاً
     lastReminder: '',
   };
 }
