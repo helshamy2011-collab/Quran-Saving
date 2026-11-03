@@ -132,7 +132,7 @@ export class Recitation {
       const shown = this.visible[idx];
       return `<span class="w ${shown ? 'shown' : 'hidden'}${mark}" data-i="${idx}"${shown ? '' : ' aria-hidden="true"'}>${wordInner(this.words[idx], g, w)}</span>`;
     };
-    const marker = (g) => `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(fromGlobal(g).a)} — التفسير">﴿${ar(fromGlobal(g).a)}﴾</button>`;
+    const marker = (g) => `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(fromGlobal(g).a)} — التفسير">${ar(fromGlobal(g).a)}</button>`;
     const pages = this.layout === 'pages';
     this.unfit?.();
     this.unfit = null;

@@ -159,6 +159,8 @@ tests/                اختبارات محرك التسميع: npm test
 - بدايات ونهايات الأسطر (أي كلمة في أي سطر) من نفس الحزمة — `data/lines.json`.
 - **التفسير الميسر** (نخبة من العلماء، مجمع الملك فهد لطباعة المصحف الشريف) عبر [QUL](https://qul.tarteel.ai/resources/tafsir/38) و[tafsir_api](https://github.com/spa5k/tafsir_api) — `data/tafsir/`.
 - **النص الإملائي** (quran.com imlaei) عبر حزمة alfurqan (MIT) — `data/imlaei.json`: كتابة كل كلمة بالإملاء العادي في موضعها، حتى تُقبل «رأى» = «رَءَا» مطابقة تامة.
+- **خط المصحف ونصه المرمّز له**: خط مجمع الملك فهد (KFGQPC HAFS Uthmanic Script، الإصدار ٣٫٠) ونصه، عبر حزمة [@quran.ws/text](https://github.com/quran-ws/quran-text) (النص: رخصة CC BY 4.0) — `fonts/UthmanicHafs-v-3.0.ttf` (بدون تعديل، بترخيص المجمع: `fonts/KFGQPC-LICENSE.txt`) و`data/kfgqpc.json` (يبنيه `tools/build-kfgqpc.mjs`). النص للعرض فقط، وتتأكد الأداة والاختبارات أن حروف كل كلمة هي نفس حروف نصنا، والتسميع يقارن بنصنا كما هو.
+- **ألوان التجويد** من نص quran.com المعلَّم بالأحكام عبر حزمة alfurqan (MIT) — `data/tajweed.json` (يبنيه `tools/build-tajweed.mjs`).
 - **الميسر في غريب القرآن** (مجمع الملك فهد) عبر [QUL](https://qul.tarteel.ai/resources/tafsir/519) و[tafsir_api](https://github.com/spa5k/tafsir_api) — `data/gharib/`.
 - التلاوات الصوتية من [everyayah.com](https://everyayah.com)، وصوت الكلمة الواحدة من [quran.com](https://quran.com).
 

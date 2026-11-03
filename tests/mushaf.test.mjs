@@ -104,3 +104,24 @@ test('مصحف التجويد: حروف الكلمة بحركاتها، وألو
   assert.equal(M.wordInner(w, 0, 3), w.text);
   delete globalThis.localStorage;
 });
+
+test('نص خط مجمع الملك فهد: كل كلمة معروضة هي نفس حروف كلمتنا، وموجودة في الخط', async () => {
+  assert.ok(Q.hasKfgqpcText());
+  let empty = 0;
+  for (let g = 0; g < Q.totalAyahs(); g++) {
+    const words = Q.ayahWords(g);
+    for (const [k, w] of words.entries()) {
+      if (!w.text) { empty++; continue; }
+      // الكلمة الفارغة بعدها جزء من نفس الكلمة المطبوعة
+      const want = w.forms[0] + (words[k + 1] && !words[k + 1].text ? words[k + 1].forms[0] : '');
+      assert.equal(Q.normalizeArabic(w.text.normalize('NFC')).replace(/ /g, ''), want, `آية ${g} كلمة ${k}`);
+    }
+  }
+  // كلمة واحدة فقط يقسمها نصنا وحدها كلمتين: «فَٱدَّٰرَٰءۡتُمۡ» (البقرة ٧٢)
+  assert.equal(empty, 1);
+  assert.equal(Q.normalizeArabic(Q.ayahWords(Q.toGlobal(2, 72))[3].text.normalize('NFC')), 'فادرتم');
+  // الخط نفسه بدون تعديل (ترخيص المجمع يمنع تعديله)
+  const { createHash } = await import('node:crypto');
+  const font = await readFile(new URL('../fonts/UthmanicHafs-v-3.0.ttf', import.meta.url));
+  assert.equal(createHash('sha256').update(font).digest('hex'), '5c47602425fb4190327ab9e1a2e8ed2f53dceaf595d8ccc29ac32b8b209ad398');
+});

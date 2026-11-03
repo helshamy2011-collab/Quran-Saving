@@ -143,7 +143,7 @@ export function renderPages(ayahs, { word, ctx = (w, g, k) => `<span class="cw">
 
 function defaultMarker(g) {
   const { a } = fromGlobal(g);
-  return `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(a)} — التفسير">﴿${ar(a)}﴾</button>`;
+  return `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(a)} — التفسير">${ar(a)}</button>`;
 }
 
 const basmala = () => ayahText(0);

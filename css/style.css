@@ -1,3 +1,11 @@
+/* خط المصحف: خط مجمع الملك فهد (KFGQPC HAFS Uthmanic Script v3.0)، مع نصه المرمّز له (data/kfgqpc.json)
+   block: لا نعرض النص بخط بديل أثناء التحميل (الخطوط الأخرى لا تعرف بعض حروفه) */
+@font-face {
+  font-family: 'KFGQPC Hafs';
+  src: url('../fonts/UthmanicHafs-v-3.0.ttf') format('truetype');
+  font-display: block;
+}
+
 /* ================= التوكنز ================= */
 :root {
   /* الألوان (مفحوصة: النص ≥ ٤٫٥:١ على أسطحها) */
@@ -43,7 +51,8 @@
   /* الخطوط */
   --font-ui: 'Noto Kufi Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-read: 'Noto Naskh Arabic', 'Noto Kufi Arabic', serif; /* النصوص الطويلة (التفسير) */
-  --font-quran: 'Amiri Quran', 'KFGQPC Uthmanic Script HAFS', 'Amiri', 'Traditional Arabic', serif;
+  --font-quran: 'KFGQPC Hafs', 'Amiri Quran', 'Amiri', 'Traditional Arabic', serif;
+  --font-ayah-no: 'Amiri Quran', 'Amiri', serif; /* أقواس رقم الآية ﴿ ﴾ (خط المجمع ليس فيه الأقواس) */
   color-scheme: light;
 }
 
@@ -958,3 +967,18 @@ body.reading-full main { padding: 0; max-width: none; }
 .full-page { font: 600 .875rem var(--font-ui); color: var(--ink); padding: 0 var(--s2); white-space: nowrap; }
 .mushaf.full { --q-stroke: .028em; }
 .mushaf.full .w[data-k]:hover { background: none; }
+
+/* رقم الآية بخط واحد (الأقواس والأرقام معاً) */
+button.ayah-end, .ayah-end { font-family: var(--font-ayah-no); }
+/* كلمة يكتبها المصحف المطبوع متصلة بالكلمة قبلها (فَٱدَّٰرَٰءۡتُمۡ) */
+.w:empty { display: none !important; }
+/* رقم الآية في الصفحة: دائرة مزخرفة صغيرة حولها الرقم (زي المصحف المطبوع، وبعرض أقل من ﴿ ﴾) */
+button.ayah-end {
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  min-width: 1.85em; height: 1.85em; padding: 0 .3em; margin: 0 .1em; border-radius: 999px;
+  font: 700 .62em/1 var(--font-ui); color: var(--accent);
+  border: .09em solid color-mix(in srgb, var(--accent) 75%, transparent);
+  box-shadow: inset 0 0 0 .14em var(--surface), inset 0 0 0 .22em color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.page button.ayah-end { font-size: .6em; padding: 0 .25em; margin: 0; }
+button.ayah-end.bookmarked { border-color: var(--ribbon); }

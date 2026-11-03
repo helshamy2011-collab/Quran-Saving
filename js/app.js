@@ -22,7 +22,7 @@ import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 24;
+export const APP_VERSION = 25;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -263,7 +263,7 @@ function renderStudy() {
       const { s, a } = fromGlobal(g);
       if (s !== lastS) { html += `<span class="surah-head">سورة ${surahName(s)}</span>`; lastS = s; }
       html += ayahWords(g).map((w, i) => studyWord(w, g, i)).join(' ');
-      html += ` <button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(a)} — التفسير">﴿${ar(a)}﴾</button><button type="button" class="ayah-play" data-g="${g}" aria-label="استمع للآية ${ar(a)}">${icon('play', { size: 14 })}</button> `;
+      html += ` <button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(a)} — التفسير">${ar(a)}</button><button type="button" class="ayah-play" data-g="${g}" aria-label="استمع للآية ${ar(a)}">${icon('play', { size: 14 })}</button> `;
       const sims = similarOf(g).filter((x) => !(x.score === 100 && fromGlobal(x.g).s === s));
       if (sims.length) html += `<button type="button" class="sim-chip" data-sim="${g}">${icon('layers', { size: 14 })}متشابهة مع ${refOf(sims[0].g)}${sims.length > 1 ? ` و${ar(sims.length - 1)} غيرها` : ''}</button> `;
     }

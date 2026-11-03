@@ -10,13 +10,14 @@ let SIMILAR = {};            // المتشابهات: آية → [[آية مشا
 let LINES = null;            // مواضع الكلمات في أسطر الصفحة: { ayahs: [[سطر، عدد…]], heads: {صفحة: [[سطر، نوع، سورة]]} }
 let PAGE_START = null;       // أول آية في كل صفحة
 let IMLAEI = {};             // الرسم الإملائي للكلمات اللي يختلف رسمها: { آية: { رقم الكلمة: صيغة مطبّعة } }
+let DISPLAY = null;          // نص العرض بترميز خط مجمع الملك فهد لكل كلمة: [آية][كلمة] (نفس حروف نصنا)
 
 // النص يكتب تنوين الضم المتتابع (تنوين الإدغام والإخفاء) بالحرف U+065E، وخط المصحف (Amiri Quran) مفيهوش
 // شكله؛ سفاري بيجيبه من خط تاني فالكلمة تتقطع («عظيمٞ»). نستبدله بالحرف القياسي U+08F1 الموجود في الخط
 export const quranGlyphs = (text) => text.replace(/\u065E/g, '\u08F1');
 
-// علامات تلحق الحرف قبلها (حركات، علامات المصحف، الألف الصغيرة، التطويل)
-const CLUSTER_MARK = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u08D3-\u08FF\u0640\u200C]/;
+// علامات تلحق الحرف قبلها (كل العلامات المركّبة: حركات، علامات المصحف، الألف الصغيرة) والتطويل
+const CLUSTER_MARK = /[\p{M}\u06D6-\u06ED\u0640\u200C]/u;
 // تقسيم الكلمة إلى حروف بحركاتها (لتلوين التجويد على مستوى الحرف دون كسر الكلمة)
 export function letterClusters(word) {
   const out = [];
@@ -29,10 +30,10 @@ export function letterClusters(word) {
 
 export async function loadQuran() {
   if (SURAHS) return;
-  const [res, lay, sim, lines, imlaei] = await Promise.all([
+  const [res, lay, sim, lines, imlaei, display] = await Promise.all([
     fetch('data/quran.json'), fetch('data/layout.json'),
     fetch('data/similar.json').catch(() => null), fetch('data/lines.json').catch(() => null),
-    fetch('data/imlaei.json').catch(() => null),
+    fetch('data/imlaei.json').catch(() => null), fetch('data/kfgqpc.json').catch(() => null),
   ]);
   if (!res.ok || !lay.ok) throw new Error('تعذر تحميل نص القرآن');
   const data = await res.json();
@@ -47,7 +48,11 @@ export async function loadQuran() {
   try { if (lines?.ok) LINES = await lines.json(); } catch { LINES = null; }
   try { if (sim?.ok) SIMILAR = (await sim.json()).similar; } catch { SIMILAR = {}; }
   try { if (imlaei?.ok) IMLAEI = (await imlaei.json()).forms; } catch { IMLAEI = {}; }
+  try { if (display?.ok) DISPLAY = (await display.json()).ayahs; } catch { DISPLAY = null; }
 }
+
+// هل النص المعروض بترميز خط مجمع الملك فهد؟ (بدونه نعرض نصنا بخط Amiri Quran)
+export const hasKfgqpcText = () => !!DISPLAY;
 
 // ---------- المتشابهات ----------
 // الآيات المتشابهة لفظياً مع آية (مرتبة من الأكثر تشابهاً)
@@ -215,7 +220,12 @@ export function fromGlobal(g) {
   return { s: lo + 1, a: g - OFFSETS[lo] + 1 };
 }
 
+// نص الآية كما يُعرض (بخط المصحف)
 export function ayahText(g) {
+  return ayahWords(g).map((w) => w.text).filter(Boolean).join(' ');
+}
+
+function sourceText(g) {
   const { s, a } = fromGlobal(g);
   return SURAHS[s - 1].ayahs[a - 1];
 }
@@ -224,8 +234,10 @@ export function ayahText(g) {
 export function ayahWords(g) {
   if (wordCache.has(g)) return wordCache.get(g);
   const { s, a } = fromGlobal(g);
-  const words = ayahText(g).split(/\s+/).filter(Boolean).map((text, i) => {
-    const word = { text, forms: uthmaniForms(text) };
+  const shown = DISPLAY?.[g];
+  const words = sourceText(g).split(/\s+/).filter(Boolean).map((text, i) => {
+    // text: ما يُعرض (ترميز خط المجمع لو متاح)؛ forms: للمطابقة مع ما يقوله المستخدم (من نصنا دائماً)
+    const word = { text: shown ? shown[i] : text, forms: uthmaniForms(text) };
     // كتابة الكلمة نفسها بالإملاء العادي (من النص الإملائي للمصحف، لهذا الموضع بالذات)
     const plain = IMLAEI[g]?.[i];
     if (plain && !word.forms.includes(plain)) word.forms.push(plain);
