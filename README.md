@@ -155,8 +155,7 @@ tests/                اختبارات محرك التسميع: npm test
 ## المصادر
 
 - نص المصحف بالرسم العثماني من [موسوعة القرآن الكريم](https://quranenc.com) عبر حزمة [quran-json](https://github.com/risan/quran-json) (رخصة CC-BY-SA 4.0 — انظر `data/LICENSE-quran-text.txt`).
-- مواضع الآيات في الصفحات والأسطر من مصحف المدينة (مجمع الملك فهد، ٦٠٤ صفحة × ١٥ سطراً) عبر حزمة [quran-madina-html](https://github.com/tarekeldeeb/quran-madina-html) (رخصة ISC) — `data/layout.json`.
-- بدايات ونهايات الأسطر (أي كلمة في أي سطر) من نفس الحزمة — `data/lines.json`.
+- مواضع الآيات في الصفحات والأسطر (أي كلمة في أي سطر) على **الطبعة الحديثة** من مصحف المدينة (٦٠٤ صفحة × ١٥ سطراً) من نص مجمع الملك فهد الإصدار ٣٫٠ عبر [@quran.ws/text](https://github.com/quran-ws/quran-text) (CC BY 4.0) — `data/layout.json` و`data/lines.json` (يبنيهما `tools/build-lines-1441.mjs`، اسم السورة والبسملة قبل أول سطر في السورة). قورنت بمصدر مستقل (طبعة ١٤٤١ في quran-madina-html): مواضع أسماء السور والبسملة متطابقة في كل الصفحات، وعدد كلمات الأسطر متطابق في ٨٨١٧ سطراً من ٨٨٢٠.
 - **التفسير الميسر** (نخبة من العلماء، مجمع الملك فهد لطباعة المصحف الشريف) عبر [QUL](https://qul.tarteel.ai/resources/tafsir/38) و[tafsir_api](https://github.com/spa5k/tafsir_api) — `data/tafsir/`.
 - **النص الإملائي** (quran.com imlaei) عبر حزمة alfurqan (MIT) — `data/imlaei.json`: كتابة كل كلمة بالإملاء العادي في موضعها، حتى تُقبل «رأى» = «رَءَا» مطابقة تامة.
 - **خط المصحف ونصه المرمّز له**: خط مجمع الملك فهد (KFGQPC HAFS Uthmanic Script، الإصدار ٣٫٠) ونصه، عبر حزمة [@quran.ws/text](https://github.com/quran-ws/quran-text) (النص: رخصة CC BY 4.0) — `fonts/UthmanicHafs-v-3.0.ttf` (بدون تعديل، بترخيص المجمع: `fonts/KFGQPC-LICENSE.txt`) و`data/kfgqpc.json` (يبنيه `tools/build-kfgqpc.mjs`). النص للعرض فقط، وتتأكد الأداة والاختبارات أن حروف كل كلمة هي نفس حروف نصنا، والتسميع يقارن بنصنا كما هو.

@@ -40,8 +40,21 @@ test('سورة النبأ في صفحة ٥٨٢: اسم السورة في الس�
   assert.equal(Q.ayahPage(g), 582);
   assert.deepEqual(Q.pageHeads(582), [[1, 0, 78], [2, 1, 78]]);
   assert.deepEqual(Q.ayahLineSegs(g), [[3, 2]]);
-  // آية النبأ ٩: كلماتها في السطر ٥ ورقمها في أول السطر ٦ كما في المصحف
-  assert.deepEqual(Q.ayahLineSegs(Q.toGlobal(78, 9)), [[5, 3], [6, 0]]);
+  // ترتيب أسطر الطبعة الحديثة: آية النبأ ٩ كلها في السطر ٥
+  assert.deepEqual(Q.ayahLineSegs(Q.toGlobal(78, 9)), [[5, 3]]);
+});
+
+test('ترتيب أسطر الطبعة الحديثة: صفحة ٢١٦ (يونس ٦٤) السطر ٤ يبدأ بـ«ٱللَّهِ»', () => {
+  const g = Q.toGlobal(10, 64);
+  assert.equal(Q.ayahPage(g), 216);
+  assert.deepEqual(Q.ayahLineSegs(g), [[2, 2], [3, 8], [4, 5]]);
+  assert.equal(Q.normalizeArabic(Q.ayahWords(g)[10].text.normalize('NFC')), 'الله');
+  // كل صفحة ١٥ سطراً (أسطر النص + اسم السورة والبسملة)، إلا أول صفحتين
+  for (let p = 3; p <= Q.PAGES; p++) {
+    const used = new Set(Q.pageHeads(p).map(([l]) => l));
+    for (const g2 of Q.pageAyahs(p)) for (const [l] of Q.ayahLineSegs(g2)) used.add(l);
+    assert.deepEqual([...used].sort((a, b) => a - b), Array.from({ length: 15 }, (_, i) => i + 1), `صفحة ${p}`);
+  }
 });
 
 test('صفحة المصحف: الكلمات المطلوبة مرقمة بالترتيب، وباقي الصفحة للسياق', () => {
