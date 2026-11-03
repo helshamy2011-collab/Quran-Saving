@@ -925,3 +925,36 @@ button.ayah-end.flash { animation: flash 1.6s var(--ease) 2; }
 .bm-go small { color: var(--muted); }
 .bm-list .icon-btn { align-self: center; color: var(--muted); }
 .bm-empty { margin: var(--s3) 0 0; }
+
+/* ================= ملء الشاشة ================= */
+.page-top { display: none; }
+body.reading-full { overflow: hidden; }
+body.reading-full .topbar, body.reading-full .skip, body.reading-full main > :not(#mushaf):not(.full-bar) { display: none !important; }
+body.reading-full main { padding: 0; max-width: none; }
+.mushaf.paged.full {
+  position: fixed; inset: 0; z-index: 40; max-width: none; margin: 0;
+  background: var(--surface); overflow: hidden;
+}
+.mushaf.full .page {
+  height: 100vh; height: 100dvh; margin: 0; border: 0; border-radius: 0; box-shadow: none;
+  display: flex; flex-direction: column;
+  padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+}
+.mushaf.full .page-top {
+  display: flex; justify-content: space-between; align-items: center; flex: none; height: 28px; padding: 0 6px;
+  font: 600 13px var(--font-ui); color: var(--muted); -webkit-text-stroke: 0;
+}
+.mushaf.full .lines { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
+.mushaf.full .ln { height: var(--lh, 2.1em); flex: none; }
+.mushaf.full .page-no { flex: none; height: 24px; margin: 0; line-height: 24px; font-size: 13px; }
+.mushaf.full .page.has-mark::before { top: 0; }
+.full-bar {
+  position: fixed; z-index: 45; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 34px);
+  display: flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2);
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 999px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+}
+.full-bar[hidden], body:not(.reading-full) .full-bar { display: none; }
+.full-page { font: 600 .875rem var(--font-ui); color: var(--ink); padding: 0 var(--s2); white-space: nowrap; }
+.mushaf.full { --q-stroke: .028em; }
+.mushaf.full .w[data-k]:hover { background: none; }

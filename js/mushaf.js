@@ -3,7 +3,7 @@
 
 import {
   ayahWords, ayahPage, ayahText, fromGlobal, surahName, toArabicDigits as ar,
-  pageAyahs, ayahLineSegs, pageHeads, hasPageLines, letterClusters,
+  pageAyahs, ayahLineSegs, pageHeads, hasPageLines, letterClusters, juzOf,
 } from './quran.js';
 
 const VIEW_KEY = 'mushaf-view';
@@ -129,7 +129,10 @@ export function renderPages(ayahs, { word, ctx = (w, g, k) => `<span class="cw">
     }
     const last = lines.findLastIndex((x) => x.length);
     const centered = p <= 2;
-    html += `<section class="page${centered ? ' centered' : ''}" data-page="${p}" aria-label="صفحة ${ar(p)}"><div class="lines">`;
+    const first = pageAyahs(p)[0];
+    html += `<section class="page${centered ? ' centered' : ''}" data-page="${p}" aria-label="صفحة ${ar(p)}">`;
+    // رأس الصفحة (يظهر في ملء الشاشة): اسم السورة والجزء كالمصحف المطبوع
+    html += `<header class="page-top" aria-hidden="true"><span>${surahName(fromGlobal(first).s)}</span><span>الجزء ${ar(juzOf(first))}</span></header><div class="lines">`;
     for (let l = 1; l <= (centered ? last : 15); l++) {
       html += `<div class="ln${kinds[l] ? ` ${kinds[l]}` : ''}">${lines[l].join(' ')}</div>`;
     }
@@ -146,19 +149,30 @@ function defaultMarker(g) {
 const basmala = () => ayahText(0);
 
 // حجم خط موحد لكل الصفحات بحيث يتسع أطول سطر لعرض الشاشة
+// ملء الشاشة (root.full): الصفحة بطول الشاشة، والأسطر الخمسة عشر موزعة على ارتفاعها
 const MAX_FONT = 30;
+const MAX_FONT_FULL = 48;
+const LINES = 15;
 export function fitPages(root) {
   const pages = [...root.querySelectorAll('.page')];
   if (!pages.length) return;
-  let size = MAX_FONT;
+  const full = root.classList.contains('full');
+  const max = full ? MAX_FONT_FULL : MAX_FONT;
+  let size = max;
   for (const page of pages) {
-    page.style.fontSize = `${MAX_FONT}px`;
+    page.style.fontSize = `${max}px`;
     page.classList.add('measuring');
     const avail = page.querySelector('.lines').clientWidth;
     let widest = 0;
     for (const ln of page.querySelectorAll('.ln:not(.head):not(.basmala)')) widest = Math.max(widest, ln.scrollWidth);
     page.classList.remove('measuring');
-    if (widest > 0 && avail > 0) size = Math.min(size, (MAX_FONT * avail) / widest);
+    if (widest > 0 && avail > 0) size = Math.min(size, (max * avail) / widest);
+    if (full) {
+      // ارتفاع السطر = ارتفاع الشاشة المتاح ÷ ١٥، والخط لا يزيد عن ارتفاع السطر
+      const lh = page.querySelector('.lines').clientHeight / LINES;
+      page.style.setProperty('--lh', `${lh}px`);
+      size = Math.min(size, lh / 1.45);
+    } else page.style.removeProperty('--lh');
   }
   size = Math.max(10, Math.floor(size * 0.985 * 10) / 10);
   for (const page of pages) page.style.fontSize = `${size}px`;
@@ -173,13 +187,17 @@ export function autoFit(root) {
   const fonts = document.fonts;
   fonts?.load?.(`20px ${getComputedStyle(root).fontFamily}`, 'بسم').then(run, () => {});
   fonts?.addEventListener?.('loadingdone', run);
-  // نعيد الضبط عند تغيّر العرض فقط (تغيير حجم الخط يغيّر الارتفاع)
+  // نعيد الضبط عند تغيّر العرض فقط (تغيير حجم الخط يغيّر الارتفاع)، وفي ملء الشاشة عند تغيّر الارتفاع كمان
   let width = root.clientWidth;
+  let height = root.clientHeight;
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
-    if (root.clientWidth !== width) { width = root.clientWidth; run(); }
+    const full = root.classList.contains('full');
+    if (root.clientWidth !== width || (full && root.clientHeight !== height)) { width = root.clientWidth; height = root.clientHeight; run(); }
   }) : null;
   ro?.observe(root);
-  return () => { ro?.disconnect(); fonts?.removeEventListener?.('loadingdone', run); cancelAnimationFrame(frame); };
+  const stop = () => { ro?.disconnect(); fonts?.removeEventListener?.('loadingdone', run); cancelAnimationFrame(frame); };
+  stop.refit = run; // إعادة الضبط يدوياً (مثلاً عند الدخول لملء الشاشة)
+  return stop;
 }
 
 // ---------- التفسير الميسر ----------

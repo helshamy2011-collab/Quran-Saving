@@ -22,7 +22,7 @@ import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 23;
+export const APP_VERSION = 24;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -1140,6 +1140,14 @@ function renderMushaf({ page } = {}) {
       <button type="button" class="btn primary" data-act="recite">${icon('mic')}سمّع الصفحة دي</button>
       <button type="button" class="btn" data-act="read">${icon('book')}اقرأها بالنظر</button>
       <button type="button" class="btn" data-act="marks">${icon('bookmark')}العلامات</button>
+      <button type="button" class="btn" data-act="full">${icon('expand')}ملء الشاشة</button>
+    </div>
+    <div class="full-bar" hidden>
+      <button type="button" class="icon-btn" data-act="unfull" aria-label="خروج من ملء الشاشة">${icon('shrink', { size: 22 })}</button>
+      <button type="button" class="icon-btn" data-act="prev" aria-label="الصفحة السابقة">${icon('chevronR', { size: 22 })}</button>
+      <span class="full-page" id="fpg"></span>
+      <button type="button" class="icon-btn" data-act="next" aria-label="الصفحة التالية">${icon('chevronL', { size: 22 })}</button>
+      <button type="button" class="icon-btn" data-act="marks" aria-label="العلامات">${icon('bookmark', { size: 22 })}</button>
     </div>`;
   const el = document.getElementById('mushaf');
   bindThemePicker(app);
@@ -1165,7 +1173,34 @@ function renderMushaf({ page } = {}) {
     unfit = autoFit(el);
     pg.value = ar(p);
     ps.value = String(fromGlobal(list[0]).s);
+    document.getElementById('fpg').textContent = `صفحة ${ar(p)} من ${ar(PAGES)}`;
   };
+  // ملء الشاشة: الصفحة وحدها بطول الشاشة وعرضها (يتذكره الجهاز)؛ الضغط على الصفحة يظهر أزرار التحكم
+  const bar = app.querySelector('.full-bar');
+  let barTimer = 0;
+  const showBar = (on) => {
+    clearTimeout(barTimer);
+    bar.hidden = !on;
+    if (on) barTimer = setTimeout(() => { bar.hidden = true; }, 4000);
+  };
+  const setFull = (on, { api = false } = {}) => {
+    document.body.classList.toggle('reading-full', on);
+    el.classList.toggle('full', on);
+    try { localStorage.setItem('mushaf-full', on ? '1' : ''); } catch { /* التخزين غير متاح */ }
+    showBar(false);
+    // يخفي شريط المتصفح على أندرويد (الآيفون لا يدعمه؛ الصفحة تملأ الشاشة برضه)
+    if (api && on) document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.catch?.(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {});
+    unfit?.refit?.();
+    if (!on) window.scrollTo(0, 0);
+  };
+  const onKey = (e) => {
+    if (document.querySelector('.sheet-backdrop') || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === 'ArrowLeft') show(p + 1);
+    else if (e.key === 'ArrowRight') show(p - 1);
+    else if (e.key === 'Escape' && el.classList.contains('full')) setFull(false);
+  };
+  document.addEventListener('keydown', onKey);
   const play = (g) => {
     stop();
     const { s, a } = fromGlobal(g);
@@ -1177,6 +1212,7 @@ function renderMushaf({ page } = {}) {
     audioEl.play().catch(() => {});
   };
   show(p);
+  if (localStorage.getItem('mushaf-full') === '1') setFull(true);
   // شكل المصحف: عادي أو ملوّن بأحكام التجويد (يسري على كل الشاشات)
   const key = app.querySelector('.tj-key');
   app.querySelectorAll('input[name=color]').forEach((r) => {
@@ -1202,6 +1238,8 @@ function renderMushaf({ page } = {}) {
   app.onclick = (e) => {
     const mark = e.target.closest('[data-ayah]');
     if (mark) return openAyah(Number(mark.dataset.ayah), { onPlay: play });
+    // في ملء الشاشة: الضغط على الصفحة يظهر/يخفي أزرار التحكم (رقم الآية ﴿ ﴾ يفتح التفسير والعلامة)
+    if (el.classList.contains('full') && e.target.closest('#mushaf')) return showBar(bar.hidden);
     const word = e.target.closest('#mushaf .w[data-k]');
     if (word) {
       const g = Number(word.dataset.g);
@@ -1212,6 +1250,9 @@ function renderMushaf({ page } = {}) {
     const act = b.dataset.act;
     if (act === 'next') show(p + 1);
     if (act === 'prev') show(p - 1);
+    if (act === 'full') setFull(true, { api: true });
+    if (act === 'unfull') setFull(false);
+    if (el.classList.contains('full') && (act === 'next' || act === 'prev')) showBar(true);
     if (act === 'marks') {
       openBookmarks({
         page: p,
@@ -1243,7 +1284,12 @@ function renderMushaf({ page } = {}) {
       el.scrollIntoView({ block: 'start', behavior: scrollBehavior() });
     }
   };
-  cleanup = () => { stop(); unfit?.(); };
+  cleanup = () => {
+    stop(); unfit?.(); clearTimeout(barTimer);
+    document.removeEventListener('keydown', onKey);
+    document.body.classList.remove('reading-full');
+    if (document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {});
+  };
 }
 
 // ================= تسميع حر =================
