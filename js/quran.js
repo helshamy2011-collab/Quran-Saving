@@ -193,6 +193,8 @@ export function ayahLineSegs(g) {
 }
 // اسم السورة والبسملة في الصفحة: [[سطر، ٠ اسم السورة | ١ البسملة، السورة]]
 export const pageHeads = (p) => LINES.heads[p] || [];
+// أسطر قصيرة يطبعها المصحف في وسط السطر (آخر بعض السور)
+export const pageShortLines = (p) => LINES?.short?.[p] || [];
 
 export const surahCount = () => 114;
 export const totalAyahs = () => TOTAL;

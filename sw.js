@@ -1,5 +1,7 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v26'; // نفس APP_VERSION في js/app.js
+const CACHE = 'hifz-v27'; // نفس APP_VERSION في js/app.js
+// خطوط المصحف المطبوع ثابتة (رابطها فيه رقم الإصدار): خزنة مستقلة لا تُمسح مع كل تحديث
+const FONT_CACHE = 'hifz-qcf4-1.1.0';
 const ASSETS = [
   './',
   'index.html',
@@ -37,17 +39,25 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
 
-// التفسير ومعاني الكلمات وألوان التجويد (data/tafsir، data/gharib، data/tajweed.json) لا تُحمَّل مسبقاً لحجمهما، وتُحفظ أول ما تُستخدم
+// التفسير ومعاني الكلمات وألوان التجويد ورموز الصفحات المطبوعة (data/tafsir، data/gharib، data/tajweed.json، data/qcf) لا تُحمَّل مسبقاً لحجمهما، وتُحفظ أول ما تُستخدم
 // ملفات البرنامج: الشبكة أولاً ثم النسخة المحفوظة (حتى تصل التحديثات)
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   const sameOrigin = url.origin === self.location.origin;
+  // خطوط المصحف المطبوع (QCF4 من jsDelivr): من الخزنة لو موجودة، وإلا من النت وتتحفظ (فتشتغل بعد كده بدون إنترنت)
+  if (url.hostname === 'cdn.jsdelivr.net' && url.pathname.startsWith('/npm/quran-qcf4@')) {
+    e.respondWith(caches.open(FONT_CACHE).then((c) => c.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
+      if (res.ok) c.put(e.request, res.clone());
+      return res;
+    }))));
+    return;
+  }
   const isFont = url.hostname.endsWith('fonts.googleapis.com') || url.hostname.endsWith('fonts.gstatic.com');
   if (!sameOrigin && !isFont) return;
   // ملفات البرنامج نسأل عنها الموقع كل مرة (no-cache) بدل نسخة المتصفح، حتى يظهر التحديث فوراً

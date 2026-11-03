@@ -982,3 +982,20 @@ button.ayah-end {
 }
 .page button.ayah-end { font-size: .6em; padding: 0 .25em; margin: 0; }
 button.ayah-end.bookmarked { border-color: var(--ribbon); }
+
+/* ================= رسم المصحف المطبوع (QCF4) ================= */
+/* كل كلمة رمز واحد مرسوم زي المطبوع: بدون تثخين إضافي، ورقم الآية رمز الزخرفة نفسه من الخط */
+.page.qcf { -webkit-text-stroke: 0 !important; --q-stroke: 0; }
+.page.qcf .w { padding: 0; }
+.page.qcf button.ayah-end {
+  min-width: 0; height: auto; padding: 0; margin: 0; border: 0; box-shadow: none; border-radius: 4px;
+  font: inherit; font-family: inherit; font-size: 1em; color: inherit; vertical-align: baseline;
+}
+.page.qcf button.ayah-end.bookmarked { color: var(--ribbon); }
+/* المطبوع: الكلمات متقاربة زي المصحف (المسافة الدنيا عند القياس أصغر، فالخط أكبر) */
+.page.qcf.measuring .ln { gap: .06em; }
+.mushaf.full .page.qcf { -webkit-text-stroke: .012em currentColor !important; }
+.page.qcf.centered .ln, .page.qcf.centered.measuring .ln { gap: .2em; }
+/* سطر قصير في المطبوع (آخر بعض السور): في الوسط بدل ما تتمط مسافاته */
+.page .ln.short { justify-content: center; gap: .3em; }
+.page.qcf .ln.short { gap: .2em; }

@@ -17,12 +17,13 @@ import { renderQuiz } from './quiz.js';
 import { renderPlacement } from './placement.js';
 import {
   renderPages, autoFit, getView, setView, tafsirOf, gharibOf, wordInner, getColorMode, setColorMode, loadTajweed, tajweedLegendHtml,
+  whenPrintReady, prefetchPrint, pagesOf,
 } from './mushaf.js';
 import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 26;
+export const APP_VERSION = 27;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -307,7 +308,10 @@ function renderStudy() {
     unfit = null;
     mushafEl.innerHTML = mushafHtml();
     mushafEl.classList.toggle('paged', getView() === 'pages');
-    if (getView() === 'pages') unfit = autoFit(mushafEl);
+    if (getView() === 'pages') {
+      unfit = autoFit(mushafEl);
+      whenPrintReady(pagesOf(t.ayahs), () => { if (mushafEl.isConnected && getView() === 'pages') paintMushaf(); });
+    }
   };
   paintMushaf();
 
@@ -1124,9 +1128,10 @@ function renderMushaf({ page } = {}) {
       <button type="button" class="icon-btn" data-act="next" aria-label="الصفحة التالية">${icon('chevronL', { size: 22 })}</button>
     </div>
     <div class="reader-style">
-      <div class="segmented two" role="radiogroup" aria-label="شكل المصحف">
-        <label><input type="radio" name="color" value="plain" ${getColorMode() === 'plain' ? 'checked' : ''}><span>${icon('book', { size: 16 })}عادي</span></label>
-        <label><input type="radio" name="color" value="tajweed" ${getColorMode() === 'tajweed' ? 'checked' : ''}><span>${icon('palette', { size: 16 })}ملوّن بالتجويد</span></label>
+      <div class="segmented" role="radiogroup" aria-label="شكل المصحف">
+        <label><input type="radio" name="color" value="print" ${getColorMode() === 'print' ? 'checked' : ''}><span>${icon('book', { size: 16 })}المطبوع</span></label>
+        <label><input type="radio" name="color" value="plain" ${getColorMode() === 'plain' ? 'checked' : ''}><span>${icon('text', { size: 16 })}نص عادي</span></label>
+        <label><input type="radio" name="color" value="tajweed" ${getColorMode() === 'tajweed' ? 'checked' : ''}><span>${icon('palette', { size: 16 })}تجويد</span></label>
       </div>
       <details class="tj-key" ${getColorMode() === 'tajweed' ? '' : 'hidden'}>
         <summary>مفتاح الألوان</summary>
@@ -1171,6 +1176,10 @@ function renderMushaf({ page } = {}) {
     paintBookmarks(el);
     unfit?.();
     unfit = autoFit(el);
+    // رسم المصحف المطبوع: لما يجهز خط الصفحة نرسمها من جديد، ونجهّز الصفحة اللي قبلها واللي بعدها
+    const shown = p;
+    whenPrintReady([p], () => { if (p === shown && el.isConnected) { el.innerHTML = ''; show(p); } });
+    prefetchPrint([p + 1, p - 1]);
     pg.value = ar(p);
     ps.value = String(fromGlobal(list[0]).s);
     document.getElementById('fpg').textContent = `صفحة ${ar(p)} من ${ar(PAGES)}`;

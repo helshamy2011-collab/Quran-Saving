@@ -88,9 +88,15 @@ for (let g = 0; g < Q.totalAyahs(); g++) {
   layout.push([page, segs[0], segs.at(-2)]);
 }
 
-// مقارنة مواضع اسم السورة والبسملة بمصدر ثانٍ مستقل
+// مقارنة مواضع اسم السورة والبسملة بمصدر ثانٍ مستقل، ومنه الأسطر القصيرة (في وسط السطر في المطبوع)
+// السطر قصير لو عرضه أقل من ٩٠٪ من عرض الصفحة (الـ١٧ سطراً دول نفسهم اللي عرض رموزها في خط الصفحات المطبوعة أقل من ٩٠٪)
+const short = {};
 if (process.argv[3]) {
   const m = JSON.parse(await readFile(process.argv[3], 'utf8'));
+  m.lines.forEach((lines, i) => {
+    if (i < 2) return; // أول صفحتين في الوسط كلهم
+    lines.forEach((x, k) => { if (x.k === 'text' && x.w < 0.9 * m.line_width) (short[i + 1] ||= []).push(k + 1); });
+  });
   let diff = 0;
   m.lines.forEach((lines, i) => {
     const p = i + 1;
@@ -106,7 +112,7 @@ const src = 'Madani Mushaf, new print (KFGQPC Uthmanic Hafs v3.0) via @quran.ws/
 await writeFile(new URL('../data/layout.json', import.meta.url), JSON.stringify({ source: src, format: 'per ayah in mushaf order: [page, firstLine, lastLine]', ayahs: layout }));
 await writeFile(new URL('../data/lines.json', import.meta.url), JSON.stringify({
   source: src,
-  format: 'ayahs[g] = [line, wordCount, line, wordCount, …] (page from layout.json); heads[page] = [[line, 0 surah title | 1 basmala, surah]]',
-  ayahs, heads,
+  format: 'ayahs[g] = [line, wordCount, line, wordCount, …] (page from layout.json); heads[page] = [[line, 0 surah title | 1 basmala, surah]]; short[page] = [lines centred in print]',
+  ayahs, heads, short,
 }));
 console.log({ ayahs: ayahs.length, pages: 604, headPages: Object.keys(heads).length });

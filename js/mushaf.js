@@ -3,7 +3,7 @@
 
 import {
   ayahWords, ayahPage, ayahText, fromGlobal, surahName, toArabicDigits as ar,
-  pageAyahs, ayahLineSegs, pageHeads, hasPageLines, letterClusters, juzOf,
+  pageAyahs, ayahLineSegs, pageHeads, hasPageLines, letterClusters, juzOf, PAGES, pageShortLines,
 } from './quran.js';
 
 const VIEW_KEY = 'mushaf-view';
@@ -18,11 +18,11 @@ export function setView(v) {
   try { localStorage.setItem(VIEW_KEY, v); } catch { /* التخزين غير متاح */ }
 }
 
-// ---------- مصحف التجويد ----------
-// ألوان أحكام التجويد على حروف الكلمة (data/tajweed.json يبنيه tools/build-tajweed.mjs)
+// ---------- شكل المصحف: المطبوع، أو نص عادي، أو ملوّن بالتجويد ----------
+// print: رسم المصحف المطبوع (خط صفحات المجمع QCF4) في عرض الصفحات؛ plain: نص بخط المجمع؛ tajweed: نص ملوّن بالأحكام
 const COLOR_KEY = 'mushaf-color';
 export function getColorMode() {
-  try { return localStorage.getItem(COLOR_KEY) === 'tajweed' ? 'tajweed' : 'plain'; } catch { return 'plain'; }
+  try { const m = localStorage.getItem(COLOR_KEY); return m === 'tajweed' || m === 'plain' ? m : 'print'; } catch { return 'print'; }
 }
 export function setColorMode(m) {
   try { localStorage.setItem(COLOR_KEY, m); } catch { /* التخزين غير متاح */ }
@@ -57,8 +57,58 @@ export function loadTajweed() {
 }
 export const tajweedReady = () => !!tajweed;
 
-// محتوى الكلمة: نصها، أو حروفها ملونة بأحكام التجويد في وضع التجويد
+// ---------- رسم المصحف المطبوع (QCF4) ----------
+// لكل صفحة: رمز كل كلمة ورقم كل آية في خط صفحتها (data/qcf/NNN.json يبنيه tools/build-qcf4.mjs).
+// الخطوط: QCF4 (طبعة المدينة ١٤٤١، خط عثمان طه، مجمع الملك فهد) من حزمة quran-qcf4 على jsDelivr — لا ننسخها عندنا.
+// لحد ما يجهز الخط (أو بدون إنترنت أول مرة) تظهر الصفحة بالنص العادي، ثم تُرسم من جديد.
+const QCF_FONT_URL = (font) => `https://cdn.jsdelivr.net/npm/quran-qcf4@1.1.0/fonts-woff2/${font}_W.woff2`;
+const qcfData = new Map();   // صفحة → بياناتها
+const qcfFonts = new Map();  // اسم الخط → وعد تحميله
+const qcfOk = new Set();     // خطوط جاهزة
+let qcfFailedAt = 0;
+let qcfPage = null;          // بيانات الصفحة اللي بتترسم دلوقتي (renderPages)
+
+export const usePrint = () => getColorMode() === 'print' && typeof FontFace !== 'undefined';
+const qcfReady = (p) => { const d = qcfData.get(p); return !!d && qcfOk.has(d.font); };
+
+function loadQcfFont(font) {
+  if (!qcfFonts.has(font)) {
+    const face = new FontFace(font, `url(${QCF_FONT_URL(font)}) format('woff2')`, { display: 'block' });
+    qcfFonts.set(font, face.load().then((f) => { document.fonts.add(f); qcfOk.add(font); })
+      .catch((e) => { qcfFonts.delete(font); throw e; }));
+  }
+  return qcfFonts.get(font);
+}
+async function loadQcfPage(p) {
+  if (!qcfData.has(p)) {
+    const r = await fetch(`data/qcf/${String(p).padStart(3, '0')}.json`);
+    if (!r.ok) throw new Error('qcf');
+    qcfData.set(p, await r.json());
+  }
+  await loadQcfFont(qcfData.get(p).font);
+}
+
+// يجهّز رسم الصفحات؛ لما يجهز وفي صفحات كانت بالنص العادي ينادي redraw (مرة واحدة)
+export function whenPrintReady(pages, redraw) {
+  if (!usePrint()) return;
+  const missing = pages.filter((p) => !qcfReady(p));
+  if (!missing.length || Date.now() - qcfFailedAt < 30000) return;
+  Promise.all(missing.map(loadQcfPage)).then(() => { if (usePrint()) redraw(); }, () => { qcfFailedAt = Date.now(); });
+}
+// تحميل مسبق (الصفحة اللي بعدها مثلاً) بدون إعادة رسم
+export function prefetchPrint(pages) {
+  if (usePrint()) pages.filter((p) => p >= 1 && p <= PAGES).forEach((p) => loadQcfPage(p).catch(() => {}));
+}
+
+// رقم الآية: رمزه في خط الصفحة المطبوعة، أو الرقم
+export function ayahNumber(g) {
+  return qcfPage?.e?.[g] ?? ar(fromGlobal(g).a);
+}
+
+// محتوى الكلمة: رمزها في خط الصفحة المطبوعة، أو نصها، أو حروفها ملونة بأحكام التجويد في وضع التجويد
 export function wordInner(w, g, k) {
+  const glyph = qcfPage?.w?.[g]?.[k];
+  if (glyph != null) return glyph;
   if (!tajweed || getColorMode() !== 'tajweed') return w.text;
   const codes = tajweed.ayahs[g]?.[k];
   if (!codes) return w.text;
@@ -106,6 +156,7 @@ export function renderPages(ayahs, { word, ctx = (w, g, k) => `<span class="cw">
 
   let html = '';
   for (const p of pagesOf(ayahs)) {
+    qcfPage = usePrint() && qcfReady(p) ? qcfData.get(p) : null;
     const lines = Array.from({ length: 16 }, () => []);
     const kinds = [];
     for (const [l, type, s] of pageHeads(p)) {
@@ -129,21 +180,25 @@ export function renderPages(ayahs, { word, ctx = (w, g, k) => `<span class="cw">
     }
     const last = lines.findLastIndex((x) => x.length);
     const centered = p <= 2;
+    const short = pageShortLines(p);
     const first = pageAyahs(p)[0];
-    html += `<section class="page${centered ? ' centered' : ''}" data-page="${p}" aria-label="صفحة ${ar(p)}">`;
+    const print = qcfPage ? ` qcf" style="font-family:'${qcfPage.font}'` : '';
+    html += `<section class="page${centered ? ' centered' : ''}${print}" data-page="${p}" aria-label="صفحة ${ar(p)}">`;
     // رأس الصفحة (يظهر في ملء الشاشة): اسم السورة والجزء كالمصحف المطبوع
     html += `<header class="page-top" aria-hidden="true"><span>${surahName(fromGlobal(first).s)}</span><span>الجزء ${ar(juzOf(first))}</span></header><div class="lines">`;
     for (let l = 1; l <= (centered ? last : 15); l++) {
-      html += `<div class="ln${kinds[l] ? ` ${kinds[l]}` : ''}">${lines[l].join(' ')}</div>`;
+      const kind = kinds[l] || (short.includes(l) ? 'short' : '');
+      html += `<div class="ln${kind ? ` ${kind}` : ''}">${lines[l].join(' ')}</div>`;
     }
     html += `</div><footer class="page-no">${ar(p)}</footer></section>`;
   }
+  qcfPage = null;
   return html;
 }
 
 function defaultMarker(g) {
   const { a } = fromGlobal(g);
-  return `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(a)} — التفسير">${ar(a)}</button>`;
+  return `<button type="button" class="ayah-end" data-ayah="${g}" aria-label="الآية ${ar(a)} — التفسير">${ayahNumber(g)}</button>`;
 }
 
 const basmala = () => ayahText(0);

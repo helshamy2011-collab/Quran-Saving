@@ -138,3 +138,28 @@ test('نص خط مجمع الملك فهد: كل كلمة معروضة هي نف
   const font = await readFile(new URL('../fonts/UthmanicHafs-v-3.0.ttf', import.meta.url));
   assert.equal(createHash('sha256').update(font).digest('hex'), '5c47602425fb4190327ab9e1a2e8ed2f53dceaf595d8ccc29ac32b8b209ad398');
 });
+
+test('رسم المصحف المطبوع (QCF4): لكل كلمة رمزها في خط صفحتها، ولكل آية رقمها', async () => {
+  for (let p = 1; p <= Q.PAGES; p++) {
+    const d = JSON.parse(await readFile(new URL(`../data/qcf/${String(p).padStart(3, '0')}.json`, import.meta.url), 'utf8'));
+    assert.match(d.font, /^QCF4_Hafs_\d\d$/);
+    for (const g of Q.pageAyahs(p)) {
+      const words = Q.ayahWords(g);
+      const row = d.w[g];
+      assert.equal(row.length, words.length, `آية ${g}`);
+      // الرمز فاضي بس لو الكلمة نفسها فاضية (جزء من الكلمة قبلها في المطبوع)
+      row.forEach((c, k) => assert.equal(!c, !words[k].text, `آية ${g} كلمة ${k}`));
+      row.forEach((c) => assert.ok(/^[-]*$/.test(c)));
+      assert.ok(/^[-]+$/.test(d.e[g]), `رقم آية ${g}`);
+    }
+  }
+});
+
+test('الأسطر القصيرة في المطبوع في وسط السطر: ١٧ سطراً (آخر الناس مثلاً)', () => {
+  let n = 0;
+  for (let p = 1; p <= Q.PAGES; p++) n += Q.pageShortLines(p).length;
+  assert.equal(n, 17);
+  assert.deepEqual(Q.pageShortLines(604), [4, 9, 14, 15]);
+  const html = M.renderPages(Q.pageAyahs(604), { word: (i, w) => `<w>${w.text}</w>` });
+  assert.equal((html.match(/class="ln short"/g) || []).length, 4);
+});
