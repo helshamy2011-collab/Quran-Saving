@@ -608,3 +608,41 @@ test('سقوط أول كلمة بعد استعاذة تنتهي بنفس الك�
   assert.notEqual(m.status[0], STATUS.OK);
   assert.deepEqual(m.status.slice(1, 5), Array(4).fill(STATUS.OK));
 });
+
+// ---------- إعادة تقسيم الكلمات بين النتيجة المؤقتة والنهائية ----------
+// نفس طريقة onWords في recitation.js: الجزء اللي اتطابق مؤقتاً يتشال بالحروف مش بعدد الكلمات
+test('afterConsumed: نفس التقسيم = نفس القص بالعدد بالظبط', async () => {
+  const { afterConsumed } = await import('../js/matcher.js');
+  assert.deepEqual(afterConsumed(['الحمد', 'لله', 'رب', 'العالمين'], ''), ['الحمد', 'لله', 'رب', 'العالمين']);
+  assert.deepEqual(afterConsumed(['الحمد', 'لله', 'رب', 'العالمين'], 'الحمدللهرب'), ['العالمين']);
+  assert.deepEqual(afterConsumed(['الحمد', 'لله'], 'الحمدلله'), []);
+  // كلمتين اتدمجوا: أول الكلمة اتطابق قبل كده والباقي جديد
+  assert.deepEqual(afterConsumed(['الحمدلله', 'رب'], 'الحمد'), ['لله', 'رب']);
+  // الحروف اتغيّرت: نسيب الكلمة (تكرارها أخف من إسقاط كلمة)
+  assert.deepEqual(afterConsumed(['قل', 'هو', 'الله', 'واحد'], 'قلهواللهاحد'), ['واحد']);
+});
+
+test('المحرك دمج كلمتين في النتيجة النهائية: الكلمة اللي بعدهم ما تضيعش', async () => {
+  const { afterConsumed } = await import('../js/matcher.js');
+  const m = new Matcher(words(1, 2, 4));
+  let used = '';
+  const interim = ['الحمد', 'لله', 'رب'];
+  const rest = afterConsumed(interim, used);
+  const n = m.feedInterim(rest);
+  used += rest.slice(0, n).map(Q.normalizeArabic).join('');
+  assert.equal(n, 3);
+  m.feedFinal(afterConsumed(['الحمدلله', 'رب', 'العالمين'], used)); // القص بالعدد كان هيضيّع «العالمين»
+  say(m, 'الرحمن الرحيم مالك يوم الدين');
+  assert.deepEqual(m.status, Array(9).fill(STATUS.OK));
+});
+
+test('المحرك فصل كلمة في النتيجة النهائية: ما تتحسبش مرتين', async () => {
+  const { afterConsumed } = await import('../js/matcher.js');
+  const m = new Matcher(words(1, 2, 4));
+  const rest = ['الحمدلله', 'رب'];
+  const n = m.feedInterim(rest);
+  const used = rest.slice(0, n).map(Q.normalizeArabic).join('');
+  m.feedFinal(afterConsumed(['الحمد', 'لله', 'رب', 'العالمين'], used));
+  say(m, 'الرحمن الرحيم مالك يوم الدين');
+  assert.deepEqual(m.status, Array(9).fill(STATUS.OK));
+});

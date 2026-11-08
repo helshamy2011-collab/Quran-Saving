@@ -1,8 +1,8 @@
 // وحدة التسميع: تعرض الآيات (مخفية كلها أو بعضها أو ظاهرة) وتتابع القراءة بالصوت
 // تستخدمها شاشة التسميع ووضع «حفّظني» وقراءة النظر
 
-import { ayahWords, fromGlobal, surahName, toArabicDigits as ar } from './quran.js';
-import { Matcher, STATUS, isMistake } from './matcher.js';
+import { ayahWords, fromGlobal, surahName, toArabicDigits as ar, normalizeArabic } from './quran.js';
+import { Matcher, STATUS, isMistake, afterConsumed } from './matcher.js';
 import { Listener, speechSupported } from './speech.js';
 import { icon } from './icons.js';
 import { renderPages, autoFit, getView, wordInner, ayahNumber, whenPrintReady, pagesOf } from './mushaf.js';
@@ -221,11 +221,13 @@ export class Recitation {
     const session = key.split(':')[0];
     if (this.lastSession !== null && session !== this.lastSession) m.afterGap = true;
     this.lastSession = session;
-    const used = this.consumed.get(key) || 0;
+    // used: حروف الجزء اللي اتطابق من النتيجة دي أثناء النتائج المؤقتة (مش عدد كلمات: المحرك ممكن يعيد تقسيمها)
+    const used = this.consumed.get(key) || '';
     if (!isFinal) {
       this.lastInterim = { key, tokens };
-      const n = m.feedInterim(tokens.slice(used));
-      if (n) { this.consumed.set(key, used + n); this.paint(); }
+      const rest = afterConsumed(tokens, used);
+      const n = m.feedInterim(rest);
+      if (n) { this.consumed.set(key, used + rest.slice(0, n).map(normalizeArabic).join('')); this.paint(); }
       return;
     }
     if (this.lastInterim?.key === key) this.lastInterim = null;
@@ -234,19 +236,19 @@ export class Recitation {
     let bestScore = -Infinity;
     for (const alt of alts) {
       const c = m.clone();
-      c.feedFinal(alt.slice(used));
+      c.feedFinal(afterConsumed(alt, used));
       let sc = 0;
       c.status.forEach((x, i) => { if (x !== m.status[i]) sc += isMistake(x) ? -2 : 1; });
       if (sc > bestScore) { bestScore = sc; best = alt; }
     }
     m.snapshot();
     this.log.push(best.join(' '));
-    m.feedFinal(best.slice(used));
+    m.feedFinal(afterConsumed(best, used));
     this.transcripts.push({
       raw: alts[0].join(' '),                    // ما أعاده المحرك أولاً كما هو
       alternatives: alts.map((a) => a.join(' ')), // كل البدائل المتاحة
       chosen: best.join(' '),                    // البديل المستخدم للمطابقة
-      consumedByInterim: best.slice(0, used).join(' '), // جزء طابق أثناء النتائج المؤقتة
+      consumedByInterim: used, // حروف الجزء اللي طابق أثناء النتائج المؤقتة
       normalized: m.lastFinal?.normalized ?? '',  // النص المطبّع اللي دخل المطابقة
       tokens: m.lastFinal?.tokens ?? [],
     });
@@ -262,12 +264,12 @@ export class Recitation {
       const { key, tokens } = this.lastInterim;
       this.lastInterim = null;
       m.snapshot();
-      const used = this.consumed.get(key) || 0;
-      m.feedFinal(tokens.slice(used));
+      const used = this.consumed.get(key) || '';
+      m.feedFinal(afterConsumed(tokens, used));
       this.log.push(`${tokens.join(' ')} (غير مكتملة)`);
       this.transcripts.push({
         raw: tokens.join(' '), alternatives: [tokens.join(' ')], chosen: tokens.join(' '), partial: true,
-        consumedByInterim: tokens.slice(0, used).join(' '),
+        consumedByInterim: used,
         normalized: m.lastFinal?.normalized ?? '', tokens: m.lastFinal?.tokens ?? [],
       });
     }

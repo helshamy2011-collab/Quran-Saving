@@ -14,6 +14,28 @@ export const STATUS = {
   UNSURE: 'unsure',       // لم تُسمع بوضوح (كلمة قصيرة أسقطها التعرف الصوتي، أو ضاعت أثناء إعادة تشغيل الميكروفون) — لا تُحسب خطأ
 };
 
+// ما بقي من نتيجة التعرف بعد الجزء اللي اتطابق أثناء النتائج المؤقتة (consumed: حروفه المطبّعة متصلة).
+// المحرك ممكن يعيد تقسيم الكلمات في التحديث التالي («الحمد لله» تبقى «الحمدلله»، خصوصاً على أجهزة أبل)،
+// فالقص بعدد الكلمات يضيّع الكلمة اللي بعدها؛ هنا نقص بالحروف. لو الحروف نفسها اتغيّرت نسيب الكلمة:
+// تكرار كلمة اتقالت أخف من إسقاط كلمة (المطابقة بتتجاهل تكرار كلمة سابقة)
+export function afterConsumed(tokens, consumed) {
+  if (!consumed) return tokens;
+  const norm = tokens.map(normalizeArabic);
+  let acc = 0;
+  for (let j = 0; j < tokens.length; j++) {
+    if (acc === consumed.length) return tokens.slice(j);
+    const next = acc + norm[j].length;
+    if (next > consumed.length) {
+      const joined = norm.slice(0, j + 1).join('');
+      // كلمتين اتدمجوا: أول الكلمة اتطابق قبل كده، والباقي جديد
+      if (joined.startsWith(consumed)) return [joined.slice(consumed.length), ...tokens.slice(j + 1)];
+      return tokens.slice(j);
+    }
+    acc = next;
+  }
+  return [];
+}
+
 export const isMistake = (st) => st === STATUS.WRONG || st === STATUS.SKIPPED || st === STATUS.HINT || st === STATUS.CORRECTED;
 
 export class Matcher {
