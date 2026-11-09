@@ -999,3 +999,7 @@ button.ayah-end.bookmarked { border-color: var(--ribbon); }
 /* سطر قصير في المطبوع (آخر بعض السور): في الوسط بدل ما تتمط مسافاته */
 .page .ln.short { justify-content: center; gap: .3em; }
 .page.qcf .ln.short { gap: .2em; }
+
+/* معاينة أثناء القراءة: كلمات اتسمعت صح ومستنية النتيجة النهائية، وكلمة لسه ما اتحكمش عليها */
+.w.tentative { opacity: .72; }
+.w.waiting { outline: 2px dashed var(--line-strong); outline-offset: -2px; }

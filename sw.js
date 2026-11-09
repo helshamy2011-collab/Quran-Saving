@@ -1,5 +1,5 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v28'; // نفس APP_VERSION في js/app.js
+const CACHE = 'hifz-v29'; // نفس APP_VERSION في js/app.js
 // خطوط المصحف المطبوع ثابتة (رابطها فيه رقم الإصدار): خزنة مستقلة لا تُمسح مع كل تحديث
 const FONT_CACHE = 'hifz-qcf4-1.1.0';
 const ASSETS = [

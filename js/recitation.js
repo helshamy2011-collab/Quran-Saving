@@ -181,7 +181,58 @@ export class Recitation {
   }
   get status() { return this.matcher.status; }
 
+  // ---- معاينة أثناء القراءة (عرض بس) ----
+  // النسخة النهائية من التعرف بتتأخر (خصوصاً على أجهزة أبل)، والنتيجة المؤقتة ما بتحكمش على كلمة مختلفة،
+  // فلو كلمة مش واضحة وقفت المطابقة نوري الكلمات اللي بعدها اللي اتسمعت صح، ومؤشر الكلمة الحالية يمشي معاك.
+  // الحكم الحقيقي على كل الكلمات زي ما هو: لما توصل النتيجة النهائية (أو زرار الإنهاء)
+  showPreview(tokens, used) {
+    const m = this.matcher;
+    if (m.done || this.completed) return;
+    const pv = m.clone();
+    pv.feedFinal(afterConsumed(tokens, used));
+    if (pv.pos <= m.pos) return;
+    const touched = [];
+    for (let i = m.pos; i < pv.pos; i++) {
+      const el = this.spans[i];
+      el.classList.remove('current');
+      if (pv.status[i] === STATUS.OK || pv.status[i] === STATUS.CORRECTED) {
+        el.classList.remove('hidden');
+        el.classList.add('shown', 'tentative');
+        el.removeAttribute('aria-hidden');
+      } else {
+        el.classList.add('waiting'); // مستنية النتيجة النهائية
+      }
+      touched.push(i);
+    }
+    const cur = this.spans[pv.pos];
+    if (cur) {
+      cur.classList.add('current');
+      touched.push(pv.pos);
+      const r = cur.getBoundingClientRect();
+      if (r.bottom > window.innerHeight - 160 || r.top < 120) cur.scrollIntoView({ block: 'center', behavior: reduceMotion() ? 'auto' : 'smooth' });
+    }
+    this.previewIdx = touched;
+    this.lastProgress = Date.now();
+  }
+
+  clearPreview() {
+    if (!this.previewIdx?.length) return;
+    const m = this.matcher;
+    for (const i of this.previewIdx) {
+      const el = this.spans[i];
+      if (!el) continue;
+      el.classList.remove('tentative', 'waiting', 'current');
+      if (m.status[i] === STATUS.HIDDEN && !this.visible[i]) {
+        el.classList.remove('shown');
+        el.classList.add('hidden');
+        el.setAttribute('aria-hidden', 'true');
+      }
+    }
+    this.previewIdx = [];
+  }
+
   paint() {
+    this.clearPreview();
     const m = this.matcher;
     m.status.forEach((stt, i) => {
       if (stt === this.prevStatus[i] && !(i === m.pos || i === m.pos - 1)) return;
@@ -227,7 +278,9 @@ export class Recitation {
       this.lastInterim = { key, tokens };
       const rest = afterConsumed(tokens, used);
       const n = m.feedInterim(rest);
-      if (n) { this.consumed.set(key, used + rest.slice(0, n).map(normalizeArabic).join('')); this.paint(); }
+      const now = n ? used + rest.slice(0, n).map(normalizeArabic).join('') : used;
+      if (n) { this.consumed.set(key, now); this.paint(); }
+      this.showPreview(tokens, now);
       return;
     }
     if (this.lastInterim?.key === key) this.lastInterim = null;
