@@ -1,6 +1,7 @@
 // غلاف حول Web Speech API مع إعادة تشغيل تلقائية
 // (المتصفح يوقف الاستماع بعد فترة صمت، فنعيد تشغيله طالما المستخدم لم يضغط إيقاف)
 
+import { QuranListener, quranAsrSupported } from './asr/listener.js';
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const speechSupported = !!SR;
 const isAndroid = /Android/i.test(navigator.userAgent);
@@ -71,4 +72,26 @@ export class Listener {
     };
     try { rec.start(); } catch (err) { this.onError(String(err)); }
   }
+}
+
+// ---------- طريقة السماع (لكل جهاز) ----------
+// device: التعرف الصوتي بتاع المتصفح (أبل/جوجل) | quran: «نموذج القرآن» التجريبي على الجهاز نفسه
+
+const ENGINE_KEY = 'asr-engine';
+export function getEngine() {
+  let e = 'device';
+  try { e = localStorage.getItem(ENGINE_KEY) === 'quran' ? 'quran' : 'device'; } catch { /* التخزين غير متاح */ }
+  if (e === 'quran' && !quranAsrSupported) return 'device';
+  if (e === 'device' && !speechSupported && quranAsrSupported) return 'quran';
+  return e;
+}
+export function setEngine(e) {
+  try { localStorage.setItem(ENGINE_KEY, e); } catch { /* التخزين غير متاح */ }
+}
+export { quranAsrSupported };
+// فيه طريقة سماع شغالة على الجهاز ده؟
+export const canListen = () => speechSupported || quranAsrSupported;
+
+export function createListener(opts) {
+  return getEngine() === 'quran' ? new QuranListener(opts) : new Listener(opts);
 }

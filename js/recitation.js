@@ -3,7 +3,7 @@
 
 import { ayahWords, fromGlobal, surahName, toArabicDigits as ar, normalizeArabic } from './quran.js';
 import { Matcher, STATUS, isMistake, afterConsumed } from './matcher.js';
-import { Listener, speechSupported } from './speech.js';
+import { createListener, canListen } from './speech.js';
 import { icon } from './icons.js';
 import { renderPages, autoFit, getView, wordInner, ayahNumber, whenPrintReady, pagesOf } from './mushaf.js';
 
@@ -32,7 +32,7 @@ export class Recitation {
   constructor({ mushafEl, dockEl, lang, weak = {}, warnWeak = true, onUpdate, onComplete, onFinishRequest, onError, onAyah, onMistake, layout = null, finishLabel = 'إنهاء التسميع' }) {
     Object.assign(this, { mushafEl, dockEl, weak, warnWeak, onUpdate, onComplete, onFinishRequest, onError, onAyah, onMistake });
     this.layout = layout || getView();
-    this.manual = !speechSupported;
+    this.manual = !canListen();
     this.active = true;
     this.completed = false;
     this.paused = false;
@@ -85,8 +85,9 @@ export class Recitation {
     // (لا يُستبدل أي منها بالنص القرآني)
     this.transcripts = [];
     this.lastSession = null;
-    this.listener = this.manual ? null : new Listener({
+    this.listener = this.manual ? null : createListener({
       lang,
+      onStatus: (msg) => { this.heardEl.textContent = msg || 'اضغط على الميكروفون وابدأ القراءة…'; },
       onWords: (tokens, isFinal, key, alts) => this.onWords(tokens, isFinal, key, alts),
       onState: () => this.syncMic(),
       onError: (msg) => { this.heardEl.textContent = msg; this.onError?.(msg); this.syncMic(); },
@@ -276,6 +277,9 @@ export class Recitation {
     const used = this.consumed.get(key) || '';
     if (!isFinal) {
       this.lastInterim = { key, tokens };
+      // «نموذج القرآن» بيعيد قراءة الجملة كلها كل شوية ويصحّح أولها («قلله» ← «ولله»)، فنتائجه المؤقتة عرض بس:
+      // الحكم على الكلمات لما الجملة تخلص (وقفة قصيرة)
+      if (this.listener?.revisesInterim) { this.clearPreview(); this.showPreview(tokens, used); return; }
       const rest = afterConsumed(tokens, used);
       const n = m.feedInterim(rest);
       const now = n ? used + rest.slice(0, n).map(normalizeArabic).join('') : used;

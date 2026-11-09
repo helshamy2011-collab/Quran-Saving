@@ -1,7 +1,9 @@
 // عامل الخدمة: يحفظ ملفات البرنامج والمصحف ليعمل بدون إنترنت
-const CACHE = 'hifz-v29'; // نفس APP_VERSION في js/app.js
+const CACHE = 'hifz-v30'; // نفس APP_VERSION في js/app.js
 // خطوط المصحف المطبوع ثابتة (رابطها فيه رقم الإصدار): خزنة مستقلة لا تُمسح مع كل تحديث
 const FONT_CACHE = 'hifz-qcf4-1.1.0';
+// نموذج القرآن ومشغّله (حوالي ٣٠ ميجا): خزنة مستقلة برضه، يتنزّلوا مرة واحدة
+const ASR_CACHE = 'hifz-asr-quran-asr-tiny-1-ort-1.22.0';
 const ASSETS = [
   './',
   'index.html',
@@ -39,7 +41,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE && k !== ASR_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -53,6 +55,13 @@ self.addEventListener('fetch', (e) => {
   // خطوط المصحف المطبوع (QCF4 من jsDelivr): من الخزنة لو موجودة، وإلا من النت وتتحفظ (فتشتغل بعد كده بدون إنترنت)
   if (url.hostname === 'cdn.jsdelivr.net' && url.pathname.startsWith('/npm/quran-qcf4@')) {
     e.respondWith(caches.open(FONT_CACHE).then((c) => c.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
+      if (res.ok) c.put(e.request, res.clone());
+      return res;
+    }))));
+    return;
+  }
+  if (url.origin === self.location.origin && /\/(models\/quran-asr-tiny|vendor\/ort)\//.test(url.pathname)) {
+    e.respondWith(caches.open(ASR_CACHE).then((c) => c.match(e.request, { ignoreSearch: true }).then((hit) => hit || fetch(e.request).then((res) => {
       if (res.ok) c.put(e.request, res.clone());
       return res;
     }))));

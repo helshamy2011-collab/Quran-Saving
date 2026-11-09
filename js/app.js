@@ -9,7 +9,7 @@ import {
 } from './store.js';
 import { todayPlan, recordSession, recordPractice, isReadIssue, stats, projection, previewChunk, dueWeak, weakAyahs, memorizedSet, surahProgress, setFocus, UNIT_LABEL, WEAK_INTERVALS } from './plan.js';
 import { STATUS, isMistake } from './matcher.js';
-import { speechSupported } from './speech.js';
+import { canListen, getEngine, setEngine, quranAsrSupported } from './speech.js';
 import { Recitation, STATUS_LABEL, wordsOf } from './recitation.js';
 import { icon } from './icons.js';
 import { renderGuided } from './guided.js';
@@ -23,7 +23,7 @@ import { voiceFix } from './voicefix.js';
 import { Player, wordUrl, ayahUrl } from './audio.js';
 
 // رقم الإصدار — لازم يساوي رقم ذاكرة العمل بدون إنترنت في sw.js (يتأكد منه الاختبار)
-export const APP_VERSION = 29;
+export const APP_VERSION = 30;
 let reloadPending = false; // وصل تحديث أثناء التسميع: نعيد التحميل عند الرجوع لأي تبويب
 
 const app = document.getElementById('app');
@@ -515,7 +515,7 @@ function renderRecite({ taskId, label, ayahs, returnTo = 'home', reading = false
       ${viewToggle()}
     </div>
     <div class="progress" id="bar-wrap" role="progressbar" aria-label="نسبة ما سمّعته" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="bar" style="width:0"></i></div>
-    ${!speechSupported ? `<div class="alert" role="note">${icon('info')}<div>متصفحك لا يدعم التعرف على الصوت. استخدم Chrome أو Edge أو Safari للتسميع بالصوت.
+    ${!canListen() ? `<div class="alert" role="note">${icon('info')}<div>متصفحك لا يدعم التعرف على الصوت. استخدم Chrome أو Edge أو Safari للتسميع بالصوت.
       الآن تقدر تسمّع بنفسك: اضغط <b>«قلتها صح»</b> لكشف الكلمة، أو <b>«نسيتها»</b> لو نسيت.</div></div>` : ''}
     ${reading ? `<div class="alert info" role="note">${icon('book')}<div><b>قراءة بالنظر:</b> اقرأ والمصحف مفتوح. الكلمات اللي تتعثر فيها هنا
       غالباً مشكلة نطق أو البرنامج مش بيفهمها — مش هتتحسب عليك أخطاء حفظ وقت التسميع.</div></div>` : `<ul class="legend" aria-label="دليل الألوان">
@@ -1635,6 +1635,15 @@ function renderPlan({ welcome = false } = {}) {
       <div class="form-submit"><button class="btn primary big block" type="submit">${icon('check')}${welcome ? 'ابدأ الخطة' : 'حفظ الخطة'}</button></div>
     </form>
 
+    ${quranAsrSupported ? `<section class="card">
+      <h2>طريقة السماع في التسميع</h2>
+      <p class="muted small">على الجهاز ده بس. «نموذج القرآن» تجريبي: متدرّب على تلاوة القرآن ويشتغل على الجهاز نفسه من غير نت بعد أول تحميل (حوالي ٣٠ ميجا)، وبيكتب الحروف اللي اتقالت فعلاً فما بيخبّيش الغلط.</p>
+      <div class="segmented two" role="radiogroup" aria-label="طريقة السماع">
+        <label><input type="radio" name="engine" value="device" ${getEngine() === 'device' ? 'checked' : ''}><span>${icon('mic', { size: 16 })}سماع الجهاز</span></label>
+        <label><input type="radio" name="engine" value="quran" ${getEngine() === 'quran' ? 'checked' : ''}><span>${icon('book', { size: 16 })}نموذج القرآن (تجريبي)</span></label>
+      </div>
+    </section>` : ''}
+
     <section class="card">
       <h2>ألوان القراءة</h2>
       <p class="muted small">«تلقائي» يمشي مع إعداد الموبايل، و«ورق» لون مصفّر زي ورق المصحف يريّح العين في القراءة الطويلة.</p>
@@ -1657,6 +1666,9 @@ function renderPlan({ welcome = false } = {}) {
 
   const form = document.getElementById('pf');
   bindThemePicker(app);
+  app.querySelectorAll('input[name=engine]').forEach((r) => {
+    r.onchange = () => { setEngine(r.value); toast(r.value === 'quran' ? 'التسميع هيسمع بنموذج القرآن (تجريبي)' : 'التسميع هيسمع بسماع الجهاز'); };
+  });
   const read = () => {
     const fd = new FormData(form);
     return {
